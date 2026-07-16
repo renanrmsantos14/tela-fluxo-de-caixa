@@ -54,10 +54,13 @@ function payload(entry: CashflowEntry): Record<string, unknown> {
 function odata(value: string): string { return value.replace(/'/g, "''"); }
 
 async function directRequest(context: RuntimeContext, path: string, options?: RequestInit): Promise<Response> {
+  const headers = new Headers(options?.headers);
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${context.clientUrl}/api/data/v9.2/${path}`, {
+    ...options,
     credentials: 'same-origin',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
-    ...options
+    headers
   });
   if (!response.ok) throw new Error(`Dataverse respondeu ${response.status}.`);
   return response;
