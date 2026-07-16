@@ -28,7 +28,7 @@ import type {
 
 type View = 'closing' | 'queue' | 'accounts' | 'categories' | 'counterparties' | 'rules' | 'imports' | 'audit';
 type RuntimeState = 'loading' | 'connected' | 'mock' | 'error';
-type Modal = 'ofx' | 'category-xlsx' | 'category-editor' | 'rule-editor' | 'delete-category' | 'delete-rule' | null;
+type Modal = 'ofx' | 'category-xlsx' | 'account-editor' | 'category-editor' | 'rule-editor' | 'delete-account' | 'delete-category' | 'delete-rule' | null;
 
 const build = window.__APP_BUILD_INFO ?? { version: packageInfo.version, builtAt: 'desenvolvimento' };
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -119,6 +119,7 @@ function App() {
   const [saveRule, setSaveRule] = useState(false);
   const [rulePattern, setRulePattern] = useState('');
   const [modal, setModal] = useState<Modal>(null);
+  const [editingAccount, setEditingAccount] = useState<FinanceReference | null>(null);
   const [editingCategory, setEditingCategory] = useState<FinanceReference | null>(null);
   const [editingRule, setEditingRule] = useState<ClassificationRule | null>(null);
   const [ofx, setOfx] = useState<OfxImportResult | null>(null);
@@ -394,22 +395,42 @@ function App() {
     }
   }
 
-  async function addMaster(event: FormEvent<HTMLFormElement>, setName: string) {
+  async function saveAccountForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get('name') ?? '').trim();
-    if (!name) return;
+    const bank = String(data.get('bank') ?? '').trim();
+    const identifier = String(data.get('identifier') ?? '').trim();
+    const duplicate = accounts.some((item) => item.id !== editingAccount?.id && item.bank === bank && item.identifier === identifier);
+    if (!name || !bank || !identifier) return flash('Preencha nome, banco e identificador OFX.');
+    if (duplicate) return flash('Já existe uma conta com este banco e identificador OFX.');
     try {
       setBusy(true);
-      const body: Record<string, unknown> = { cr40f_name: name };
-      if (setName === financeSets.accounts) { body.cr40f_banco = String(data.get('bank') ?? ''); body.cr40f_identificador = String(data.get('identifier') ?? ''); }
-      await saveReference(context, setName, body);
-      await audit(context, 'Cadastro', `${name} criado.`);
-      if (context.mode !== 'mock') await reload();
+      const id = await saveReference(context, financeSets.accounts, { cr40f_name: name, cr40f_banco: bank, cr40f_identificador: identifier }, editingAccount?.id);
+      await audit(context, editingAccount ? 'Conta editada' : 'Conta criada', name);
+      if (context.mode === 'mock') {
+        setAccounts((current) => editingAccount
+          ? current.map((item) => item.id === id ? { ...item, name, bank, identifier } : item)
+          : [...current, { id, name, bank, identifier }]);
+      } else await reload();
       event.currentTarget.reset();
-      flash('Cadastro salvo.');
+      setModal(null); setEditingAccount(null); flash(editingAccount ? 'Conta atualizada.' : 'Conta cadastrada.');
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Não foi possível salvar.');
+    } finally { setBusy(false); }
+  }
+
+  async function removeAccount() {
+    if (!editingAccount) return;
+    try {
+      setBusy(true);
+      await deleteReference(context, financeSets.accounts, editingAccount.id);
+      await audit(context, 'Conta excluída', editingAccount.name);
+      if (context.mode === 'mock') setAccounts((current) => current.filter((item) => item.id !== editingAccount.id));
+      else await reload();
+      setModal(null); setEditingAccount(null); flash('Conta excluída.');
+    } catch {
+      flash('Conta vinculada a importações ou regras não pode ser excluída.');
     } finally { setBusy(false); }
   }
 
@@ -514,6 +535,7 @@ function App() {
 
   const closeModal = useCallback(() => {
     setModal(null);
+    setEditingAccount(null);
     setShowAccountCreator(false);
   }, []);
   const closeDrawer = useCallback(() => setSelected(null), []);
@@ -553,7 +575,7 @@ function App() {
 
         {view === 'closing' && <ClosingView closing={closing} breakdown={breakdown} pending={monthEntries.filter((entry) => entry.status !== 'validated')} openEntry={openEntry} month={month} />}
         {view === 'queue' && <QueueView entries={queue} checked={checked} setChecked={setChecked} openEntry={openEntry} status={statusFilter} setStatus={setStatusFilter} search={search} setSearch={setSearch} validate={validateChecked} busy={busy} mobile={mobile} />}
-        {view === 'accounts' && <MasterView title="Contas bancárias" description="Cadastre cada conta uma vez. BANKID e ACCTID do OFX evitam importação na conta errada." items={accounts} disabled={mobile || busy} onSubmit={(event) => void addMaster(event, financeSets.accounts)} fields={<><label>Banco<input name="bank" required /></label><label>Identificador OFX (ACCTID)<input name="identifier" required /></label></>} />}
+        {view === 'accounts' && <MasterView title="Contas bancárias" description="Cadastre cada conta uma vez. BANKID e ACCTID do OFX evitam importação na conta errada." items={accounts} disabled={mobile || busy} onSubmit={(event) => void saveAccountForm(event)} edit={(item) => { setEditingAccount(item); setModal('account-editor'); }} remove={(item) => { setEditingAccount(item); setModal('delete-account'); }} fields={<><label>Banco<input name="bank" required /></label><label>Identificador OFX (ACCTID)<input name="identifier" required /></label></>} />}
         {view === 'counterparties' && <SharedCounterpartiesView items={counterparties} />}
         {view === 'categories' && <CategoriesView categories={categories} disabled={mobile || busy} openImport={() => setModal('category-xlsx')} add={() => { setEditingCategory(null); setModal('category-editor'); }} edit={(item) => { setEditingCategory(item); setModal('category-editor'); }} remove={(item) => { setEditingCategory(item); setModal('delete-category'); }} />}
         {view === 'rules' && <RulesView rules={rules} accounts={accounts} disabled={mobile || busy} add={() => { setEditingRule(null); setModal('rule-editor'); }} edit={(item) => { setEditingRule(item); setModal('rule-editor'); }} remove={(item) => { setEditingRule(item); setModal('delete-rule'); }} toggle={(item) => void toggleRule(item)} />}
@@ -581,8 +603,8 @@ function App() {
       <footer><button className="button primary" disabled={mobile || busy || !draft.categoryId} onClick={() => void validateOne()}>{busy ? <LoaderCircle className="spin" size={16} /> : saveRule ? <Save size={16} /> : <Check size={16} />}{saveRule ? 'Salvar regra e validar' : 'Validar movimentação'}</button></footer>
     </div></>}
 
-    {modalPresence.rendered && <div className="modal-layer" data-state={modalPresence.phase}><button className="drawer-backdrop" data-state={modalPresence.phase} aria-label="Fechar modal" onClick={closeModal} /><div className="modal" data-state={modalPresence.phase} role="dialog" aria-modal="true" aria-label={modalPresence.rendered === 'ofx' ? 'Importar OFX' : modalPresence.rendered === 'category-xlsx' ? 'Importar categorias da DRE' : modalPresence.rendered === 'delete-category' ? 'Excluir categoria' : modalPresence.rendered === 'delete-rule' ? 'Excluir regra' : modalPresence.rendered === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'} ref={modalRef}>
-      <header><div><p className="eyebrow">GESTÃO FINANCEIRA</p><h2>{modalPresence.rendered === 'ofx' ? 'Importar OFX' : modalPresence.rendered === 'category-xlsx' ? 'Importar categorias da DRE' : modalPresence.rendered === 'delete-category' ? 'Excluir categoria' : modalPresence.rendered === 'delete-rule' ? 'Excluir regra' : modalPresence.rendered === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'}</h2></div><button className="icon-button" aria-label="Fechar" onClick={closeModal}><X size={18} /></button></header>
+    {modalPresence.rendered && <div className="modal-layer" data-state={modalPresence.phase}><button className="drawer-backdrop" data-state={modalPresence.phase} aria-label="Fechar modal" onClick={closeModal} /><div className="modal" data-state={modalPresence.phase} role="dialog" aria-modal="true" aria-label={modalPresence.rendered === 'ofx' ? 'Importar OFX' : modalPresence.rendered === 'category-xlsx' ? 'Importar categorias da DRE' : modalPresence.rendered === 'account-editor' ? 'Editar conta' : modalPresence.rendered === 'delete-account' ? 'Excluir conta' : modalPresence.rendered === 'delete-category' ? 'Excluir categoria' : modalPresence.rendered === 'delete-rule' ? 'Excluir regra' : modalPresence.rendered === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'} ref={modalRef}>
+      <header><div><p className="eyebrow">GESTÃO FINANCEIRA</p><h2>{modalPresence.rendered === 'ofx' ? 'Importar OFX' : modalPresence.rendered === 'category-xlsx' ? 'Importar categorias da DRE' : modalPresence.rendered === 'account-editor' ? 'Editar conta' : modalPresence.rendered === 'delete-account' ? 'Excluir conta' : modalPresence.rendered === 'delete-category' ? 'Excluir categoria' : modalPresence.rendered === 'delete-rule' ? 'Excluir regra' : modalPresence.rendered === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'}</h2></div><button className="icon-button" aria-label="Fechar" onClick={closeModal}><X size={18} /></button></header>
       {modalPresence.rendered === 'ofx' && <div>
         {!ofx ? <label className="dropzone"><FileUp size={34} /><strong>Escolha um arquivo .ofx</strong><span>SGML 1.x ou XML 2.x · UTF-8 ou Windows-1252</span><input type="file" accept=".ofx" onChange={(event) => void readOfx(event)} /></label> : <>
           <div className="import-summary"><Banknote /><div><strong>{ofx.transactions.length} movimentações</strong><small>Conta OFX {ofx.bankId || '—'} · {ofx.accountId || '—'}</small></div></div>
@@ -600,6 +622,7 @@ function App() {
         {!showAccountCreator && <footer><button className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={!ofx || !importAccountId || busy} onClick={() => void confirmOfx()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}Importar</button></footer>}
       </div>}
       {modalPresence.rendered === 'category-xlsx' && <div><p className="form-note">A primeira linha deve conter exatamente: <strong>Grupo</strong>, <strong>Categoria</strong> e <strong>Natureza</strong>. Uma linha inválida rejeita o arquivo inteiro.</p><label className="dropzone"><FileSpreadsheet size={34} /><strong>Escolha a planilha .xlsx</strong><span>Upsert por Grupo + Categoria</span><input type="file" accept=".xlsx" onChange={(event) => void importCategoryFile(event)} /></label></div>}
+      {modalPresence.rendered === 'account-editor' && <form onSubmit={(event) => void saveAccountForm(event)}><label>Nome da conta<input name="name" defaultValue={editingAccount?.name ?? ''} required /></label><div className="form-row"><label>Banco<input name="bank" defaultValue={editingAccount?.bank ?? ''} required /></label><label>Identificador OFX (ACCTID)<input name="identifier" defaultValue={editingAccount?.identifier ?? ''} required /></label></div><footer><button type="button" className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={busy}><Save size={16} />Salvar conta</button></footer></form>}
       {modalPresence.rendered === 'category-editor' && <form onSubmit={(event) => void saveCategoryForm(event)}>
         <label>Grupo<input name="group" list="category-groups" defaultValue={editingCategory?.group ?? ''} required /><datalist id="category-groups">{[...new Set(categories.map((item) => item.group).filter(Boolean))].map((group) => <option key={group} value={group} />)}</datalist></label>
         <label>Categoria<input name="name" defaultValue={editingCategory?.name ?? ''} required /></label>
@@ -616,6 +639,7 @@ function App() {
       </form>}
       {modalPresence.rendered === 'delete-category' && <ConfirmDelete name={`${editingCategory?.group} · ${editingCategory?.name}`} warning="Categorias utilizadas por lançamentos ou regras não podem ser excluídas." busy={busy} cancel={closeModal} confirm={() => void removeCategory()} />}
       {modalPresence.rendered === 'delete-rule' && <ConfirmDelete name={editingRule?.pattern ?? ''} warning="Regras já aplicadas em lançamentos devem ser inativadas, não excluídas." busy={busy} cancel={closeModal} confirm={() => void removeRule()} />}
+      {modalPresence.rendered === 'delete-account' && <ConfirmDelete name={editingAccount?.name ?? ''} warning="Contas vinculadas a importações ou regras não podem ser excluídas." busy={busy} cancel={closeModal} confirm={() => void removeAccount()} />}
     </div></div>}
     {toastPresence.rendered && <div className="toast" data-state={toastPresence.phase} role="status"><CheckCircle2 size={17} /><span className="toast-message" key={toastPresence.rendered}>{toastPresence.rendered}</span></div>}
   </div>;
@@ -646,8 +670,8 @@ function QueueView({ entries, checked, setChecked, openEntry, status, setStatus,
   <div className="queue-table"><div className="queue-head"><input aria-label="Selecionar todas classificadas" type="checkbox" checked={eligible.length > 0 && eligible.every((entry) => checked.has(entry.id))} onChange={(event) => setChecked(event.target.checked ? new Set(eligible.map((entry) => entry.id)) : new Set())} disabled={mobile} /><span>Movimentação</span><span>Data</span><span>Sugestão</span><span>Valor</span><span /></div>{entries.map((entry) => <div className="queue-row" key={entry.id}><input aria-label={`Selecionar ${entry.description}`} type="checkbox" checked={checked.has(entry.id)} disabled={mobile || !entry.categoryId || entry.status === 'validated'} onChange={(event) => { const next = new Set(checked); if (event.target.checked) next.add(entry.id); else next.delete(entry.id); setChecked(next); }} /><span><strong>{entry.originalDescription || entry.description}</strong><small>{entry.originalMemo || entry.checkNumber || entry.fitId}</small></span><span>{formatDay(entry.date)}</span><span>{entry.category ? <><strong>{entry.category}</strong><small>{entry.counterparty || 'Sem destinatário'}</small></> : <span className="badge warning">Sem regra</span>}</span><b className={entry.nature === 'outflow' ? 'negative' : ''}>{entry.nature === 'inflow' ? '+' : '−'} {money.format(entry.amount)}</b><button className="icon-button" aria-label={`Abrir ${entry.description}`} onClick={() => openEntry(entry)}><ChevronRight size={16} /></button></div>)}</div></section>;
 }
 
-function MasterView({ title, description, items, disabled, onSubmit, fields }: { title: string; description: string; items: FinanceReference[]; disabled: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; fields: React.ReactNode }) {
-  return <div className="management-grid"><form className="surface reference-form" onSubmit={onSubmit}><fieldset disabled={disabled}><p className="eyebrow">REGISTRO UNIFICADO</p><h2>Novo cadastro</h2><p className="form-note">{description}</p><div className="reference-fields"><label>Nome<input name="name" required /></label>{fields}</div><button className="button primary" type="submit"><Plus size={16} />Salvar cadastro</button></fieldset></form><section className="surface reference-list"><p className="eyebrow">CADASTRADOS</p><h2>{title}</h2>{items.map((item) => <div className="reference-row" key={item.id}><strong>{item.name}</strong><small>{item.bank || item.group || item.document || item.identifier || 'Registro ativo'}</small></div>)}</section></div>;
+function MasterView({ title, description, items, disabled, onSubmit, edit, remove, fields }: { title: string; description: string; items: FinanceReference[]; disabled: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; edit: (item: FinanceReference) => void; remove: (item: FinanceReference) => void; fields: React.ReactNode }) {
+  return <div className="management-grid"><form className="surface reference-form" onSubmit={onSubmit}><fieldset disabled={disabled}><p className="eyebrow">REGISTRO UNIFICADO</p><h2>Nova conta</h2><p className="form-note">{description}</p><div className="reference-fields"><label>Nome<input name="name" required /></label>{fields}</div><button className="button primary" type="submit"><Plus size={16} />Adicionar conta</button></fieldset></form><section className="surface reference-list"><p className="eyebrow">CADASTRADOS</p><h2>{title}</h2>{items.map((item) => <div className="reference-row" key={item.id}><span><strong>{item.name}</strong><small>{item.bank || item.group || item.document || item.identifier || 'Registro ativo'}{item.bank && item.identifier ? ` · ${item.identifier}` : ''}</small></span><div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} disabled={disabled} onClick={() => edit(item)}><Pencil size={15} /></button><button className="icon-button danger-action" aria-label={`Excluir ${item.name}`} disabled={disabled} onClick={() => remove(item)}><Trash2 size={15} /></button></div></div>)}</section></div>;
 }
 
 function SharedCounterpartiesView({ items }: { items: FinanceReference[] }) {
