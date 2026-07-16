@@ -4,6 +4,7 @@ const html = await readFile(new URL('../dist/cr40f_TelaFluxoDeCaixa.html', impor
 const checks = [
   ['root React', '<div id="root"></div>'],
   ['build info', 'window.__APP_BUILD_INFO'],
+  ['Manrope embutida', 'data:font/woff2;base64,'],
   ['sem assets externos', 'src="/assets/'],
   ['sem gradiente', 'linear-gradient']
 ];

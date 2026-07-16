@@ -2,6 +2,7 @@ import { readFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { basename, extname } from 'node:path';
 
 const run = promisify(exec);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -18,8 +19,19 @@ const [script, styles] = await Promise.all([
   readFile(new URL(`assets/${js}`, dist), 'utf8'),
   readFile(new URL(`assets/${css}`, dist), 'utf8')
 ]);
+const fontMime = { '.woff2': 'font/woff2', '.woff': 'font/woff' };
+let embeddedStyles = styles;
+for (const match of styles.matchAll(/url\((['"]?)([^'")]+)\1\)/g)) {
+  const original = match[0];
+  const source = match[2];
+  const file = basename(source);
+  const mime = fontMime[extname(file)];
+  if (!mime || source.startsWith('data:') || source.startsWith('http')) continue;
+  const encoded = (await readFile(new URL(`assets/${file}`, dist))).toString('base64');
+  embeddedStyles = embeddedStyles.replace(original, `url("data:${mime};base64,${encoded}")`);
+}
 const build = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-const html = `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Fluxo de Caixa | Betinhos</title><style>${styles}</style></head><body><div id="root"></div><script>window.__APP_BUILD_INFO=${JSON.stringify({ version: packageJson.version, builtAt: build })};</script><script type="module">${script}</script></body></html>`;
+const html = `<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>Fluxo de Caixa | Betinhos</title><style>${embeddedStyles}</style></head><body><div id="root"></div><script>window.__APP_BUILD_INFO=${JSON.stringify({ version: packageJson.version, builtAt: build })};</script><script type="module">${script}</script></body></html>`;
 await mkdir(dist, { recursive: true });
 await writeFile(new URL('cr40f_TelaFluxoDeCaixa.html', dist), html, 'utf8');
 console.log(`[build] dist/cr40f_TelaFluxoDeCaixa.html (${Buffer.byteLength(html)} bytes)`);
