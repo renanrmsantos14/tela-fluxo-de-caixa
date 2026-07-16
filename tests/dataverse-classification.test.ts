@@ -53,6 +53,7 @@ test('cria regra e valida lançamento no mesmo changeset', () => {
   assert.match(request.body, /"cr40f_expressao":"TICKET LOG"/);
   assert.match(request.body, /"cr40f_direcao":"outflow"/);
   assert.match(request.body, /"cr40f_ativo":true/);
+  assert.match(request.body, /"cr40f_TerceiroFavorecidoRef@odata.bind":"\/cr40f_terceirofavorecidos\(44444444-4444-4444-4444-444444444444\)"/);
   assert.match(request.body, /"cr40f_RegraRef@odata.bind":"\$1"/);
   assert.match(request.body, /PATCH \/api\/data\/v9\.2\/cr40f_fluxocaixalancamentos\(11111111-1111-1111-1111-111111111111\)/);
 });

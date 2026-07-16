@@ -4,16 +4,16 @@ import ExcelJS from 'exceljs';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, BookOpenCheck, Check,
   CheckCircle2, ChevronRight, CircleGauge, FileSpreadsheet, FileUp, Landmark,
-  ListChecks, LoaderCircle, Menu, Plus, ReceiptText, RotateCcw, Save, Search,
-  Settings2, Tags, Upload, Users, WalletCards, X,
+  ListChecks, LoaderCircle, Menu, Pencil, Plus, ReceiptText, RotateCcw, Save, Search,
+  Settings2, Tags, Trash2, Upload, Users, WalletCards, X,
 } from 'lucide-react';
 import packageInfo from '../package.json';
 import './styles.css';
 import { parseCategoryRows } from './lib/category-import';
 import { assertCategoryCompatible, monthlyClosing, normalizeBankText } from './lib/classification';
 import {
-  audit, financeSets, importCategoriesAtomically, importOfxAtomically, listReferences,
-  loadClassificationRules, loadEntries, reverseImport, saveReference,
+  audit, deleteReference, financeSets, importCategoriesAtomically, importOfxAtomically, listReferences,
+  loadClassificationRules, loadEntries, loadFavorecidos, reverseImport, saveClassificationRule, saveReference,
   saveRuleAndValidateAtomically, validateEntriesAtomically,
 } from './lib/dataverse';
 import { planOfxEntries } from './lib/import-planning';
@@ -28,7 +28,7 @@ import type {
 
 type View = 'closing' | 'queue' | 'accounts' | 'categories' | 'counterparties' | 'rules' | 'imports' | 'audit';
 type RuntimeState = 'loading' | 'connected' | 'mock' | 'error';
-type Modal = 'ofx' | 'category-xlsx' | null;
+type Modal = 'ofx' | 'category-xlsx' | 'category-editor' | 'rule-editor' | 'delete-category' | 'delete-rule' | null;
 
 const build = window.__APP_BUILD_INFO ?? { version: packageInfo.version, builtAt: 'desenvolvimento' };
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -103,6 +103,8 @@ function App() {
   const [saveRule, setSaveRule] = useState(false);
   const [rulePattern, setRulePattern] = useState('');
   const [modal, setModal] = useState<Modal>(null);
+  const [editingCategory, setEditingCategory] = useState<FinanceReference | null>(null);
+  const [editingRule, setEditingRule] = useState<ClassificationRule | null>(null);
   const [ofx, setOfx] = useState<OfxImportResult | null>(null);
   const [ofxFile, setOfxFile] = useState<File | null>(null);
   const [importAccountId, setImportAccountId] = useState('');
@@ -115,7 +117,7 @@ function App() {
     const [loadedAccounts, loadedCategories, loadedCounterparties, loadedImports, loadedAudit, loadedEntries] = await Promise.all([
       listReferences(resolved, financeSets.accounts, 'cr40f_fluxocaixacontaid,cr40f_name,cr40f_banco,cr40f_identificador'),
       listReferences(resolved, financeSets.categories, 'cr40f_fluxocaixacategoriaid,cr40f_name,cr40f_grupo,cr40f_natureza'),
-      listReferences(resolved, financeSets.counterparties, 'cr40f_fluxocaixacontraparteid,cr40f_name,cr40f_documento'),
+      loadFavorecidos(resolved),
       listReferences(resolved, financeSets.imports, 'cr40f_fluxocaixaimportacaoid,cr40f_name,cr40f_status,_cr40f_contaref_value'),
       listReferences(resolved, financeSets.events, 'cr40f_fluxocaixaeventoid,cr40f_name,cr40f_acao,cr40f_detalhe,cr40f_data'),
       loadEntries(resolved),
@@ -339,7 +341,6 @@ function App() {
       setBusy(true);
       const body: Record<string, unknown> = { cr40f_name: name };
       if (setName === financeSets.accounts) { body.cr40f_banco = String(data.get('bank') ?? ''); body.cr40f_identificador = String(data.get('identifier') ?? ''); }
-      if (setName === financeSets.counterparties) body.cr40f_documento = String(data.get('document') ?? '');
       await saveReference(context, setName, body);
       await audit(context, 'Cadastro', `${name} criado.`);
       if (context.mode !== 'mock') await reload();
@@ -348,6 +349,105 @@ function App() {
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Não foi possível salvar.');
     } finally { setBusy(false); }
+  }
+
+  async function saveCategoryForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get('name') ?? '').trim();
+    const group = String(data.get('group') ?? '').trim();
+    const nature = String(data.get('nature') ?? '') as EntryNature;
+    const duplicate = categories.some((item) =>
+      item.id !== editingCategory?.id
+      && normalizeBankText(item.name) === normalizeBankText(name)
+      && normalizeBankText(item.group ?? '') === normalizeBankText(group)
+    );
+    if (!name || !group || !['inflow', 'outflow', 'transfer'].includes(nature)) return flash('Preencha grupo, categoria e natureza.');
+    if (duplicate) return flash('Esta categoria já existe dentro do grupo.');
+    try {
+      setBusy(true);
+      const id = await saveReference(context, financeSets.categories, { cr40f_name: name, cr40f_grupo: group, cr40f_natureza: nature }, editingCategory?.id);
+      await audit(context, editingCategory ? 'Categoria editada' : 'Categoria criada', `${group} · ${name}`);
+      if (context.mode === 'mock') {
+        setCategories((current) => editingCategory
+          ? current.map((item) => item.id === id ? { ...item, name, group, nature } : item)
+          : [...current, { id, name, group, nature }]);
+      } else await reload();
+      setModal(null); setEditingCategory(null); flash('Categoria salva.');
+    } catch (error) { flash(error instanceof Error ? error.message : 'Não foi possível salvar a categoria.'); }
+    finally { setBusy(false); }
+  }
+
+  async function removeCategory() {
+    if (!editingCategory) return;
+    try {
+      setBusy(true);
+      await deleteReference(context, financeSets.categories, editingCategory.id);
+      await audit(context, 'Categoria excluída', `${editingCategory.group} · ${editingCategory.name}`);
+      if (context.mode === 'mock') setCategories((current) => current.filter((item) => item.id !== editingCategory.id));
+      else await reload();
+      setModal(null); setEditingCategory(null); flash('Categoria excluída.');
+    } catch { flash('Categoria em uso não pode ser excluída. Edite ou mantenha o registro.'); }
+    finally { setBusy(false); }
+  }
+
+  async function saveRuleForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const pattern = String(data.get('pattern') ?? '').trim();
+    const direction = String(data.get('direction') ?? '') as ClassificationRule['direction'];
+    const category = categories.find((item) => item.id === String(data.get('categoryId') ?? ''));
+    const party = counterparties.find((item) => item.id === String(data.get('counterpartyId') ?? ''));
+    if (normalizeBankText(pattern).length < 4 || !category || !['inflow', 'outflow'].includes(direction)) return flash('Informe padrão, direção e categoria.');
+    if (category.nature !== direction) return flash('A natureza da categoria precisa ser igual à direção da regra.');
+    const rule: ClassificationRule = {
+      id: editingRule?.id ?? '',
+      name: `${pattern} → ${category.name}`,
+      pattern,
+      direction,
+      accountId: String(data.get('accountId') ?? '') || undefined,
+      categoryId: category.id,
+      categoryName: category.name,
+      group: category.group ?? '',
+      counterpartyId: party?.id,
+      counterpartyName: party?.name,
+      active: data.get('active') === 'on',
+    };
+    try {
+      setBusy(true);
+      const id = await saveClassificationRule(context, rule);
+      await audit(context, editingRule ? 'Regra editada' : 'Regra criada', `${pattern} → ${category.name}`);
+      if (context.mode === 'mock') {
+        setRules((current) => editingRule ? current.map((item) => item.id === id ? { ...rule, id } : item) : [...current, { ...rule, id }]);
+      } else await reload();
+      setModal(null); setEditingRule(null); flash('Regra salva.');
+    } catch (error) { flash(error instanceof Error ? error.message : 'Não foi possível salvar a regra.'); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleRule(rule: ClassificationRule) {
+    try {
+      setBusy(true);
+      await saveClassificationRule(context, { ...rule, active: !rule.active });
+      await audit(context, rule.active ? 'Regra inativada' : 'Regra ativada', rule.pattern);
+      if (context.mode === 'mock') setRules((current) => current.map((item) => item.id === rule.id ? { ...item, active: !item.active } : item));
+      else await reload();
+      flash(rule.active ? 'Regra inativada.' : 'Regra ativada.');
+    } catch (error) { flash(error instanceof Error ? error.message : 'Não foi possível alterar a regra.'); }
+    finally { setBusy(false); }
+  }
+
+  async function removeRule() {
+    if (!editingRule) return;
+    try {
+      setBusy(true);
+      await deleteReference(context, financeSets.rules, editingRule.id);
+      await audit(context, 'Regra excluída', editingRule.pattern);
+      if (context.mode === 'mock') setRules((current) => current.filter((item) => item.id !== editingRule.id));
+      else await reload();
+      setModal(null); setEditingRule(null); flash('Regra excluída.');
+    } catch { flash('Regra já usada não pode ser excluída. Inative-a.'); }
+    finally { setBusy(false); }
   }
 
   const closeModal = () => setModal(null);
@@ -385,9 +485,9 @@ function App() {
       {view === 'closing' && <ClosingView closing={closing} breakdown={breakdown} pending={monthEntries.filter((entry) => entry.status !== 'validated')} openEntry={openEntry} month={month} />}
       {view === 'queue' && <QueueView entries={queue} checked={checked} setChecked={setChecked} openEntry={openEntry} status={statusFilter} setStatus={setStatusFilter} search={search} setSearch={setSearch} validate={validateChecked} busy={busy} mobile={mobile} />}
       {view === 'accounts' && <MasterView title="Contas bancárias" description="Cadastre cada conta uma vez. BANKID e ACCTID do OFX evitam importação na conta errada." items={accounts} disabled={mobile || busy} onSubmit={(event) => void addMaster(event, financeSets.accounts)} fields={<><label>Banco<input name="bank" required /></label><label>Identificador OFX (ACCTID)<input name="identifier" required /></label></>} />}
-      {view === 'counterparties' && <MasterView title="Destinatários" description="A contraparte é opcional, mas ajuda a reconhecer João, Ticket Log, CL e outros nomes recorrentes." items={counterparties} disabled={mobile || busy} onSubmit={(event) => void addMaster(event, financeSets.counterparties)} fields={<label>Documento ou chave de referência<input name="document" /></label>} />}
-      {view === 'categories' && <CategoriesView categories={categories} disabled={mobile || busy} openImport={() => setModal('category-xlsx')} />}
-      {view === 'rules' && <RulesView rules={rules} accounts={accounts} />}
+      {view === 'counterparties' && <SharedCounterpartiesView items={counterparties} />}
+      {view === 'categories' && <CategoriesView categories={categories} disabled={mobile || busy} openImport={() => setModal('category-xlsx')} add={() => { setEditingCategory(null); setModal('category-editor'); }} edit={(item) => { setEditingCategory(item); setModal('category-editor'); }} remove={(item) => { setEditingCategory(item); setModal('delete-category'); }} />}
+      {view === 'rules' && <RulesView rules={rules} accounts={accounts} disabled={mobile || busy} add={() => { setEditingRule(null); setModal('rule-editor'); }} edit={(item) => { setEditingRule(item); setModal('rule-editor'); }} remove={(item) => { setEditingRule(item); setModal('delete-rule'); }} toggle={(item) => void toggleRule(item)} />}
       {view === 'imports' && <ImportsView imports={imports} entries={entries} reverse={async (id) => { try { setBusy(true); await reverseImport(context, id); await audit(context, 'Reversão OFX', `Lote ${id} revertido.`); if (context.mode !== 'mock') await reload(); flash('Lote revertido integralmente.'); } catch (error) { flash(error instanceof Error ? error.message : 'Falha na reversão.'); } finally { setBusy(false); } }} disabled={mobile || busy} />}
       {view === 'audit' && <AuditView events={auditEvents} />}
       <small className="mobile-version">Versão {build.version} · {build.builtAt}</small>
@@ -411,16 +511,33 @@ function App() {
       <footer><button className="button primary" disabled={mobile || busy || !draft.categoryId} onClick={() => void validateOne()}>{busy ? <LoaderCircle className="spin" size={16} /> : saveRule ? <Save size={16} /> : <Check size={16} />}{saveRule ? 'Salvar regra e validar' : 'Validar movimentação'}</button></footer>
     </div></>}
 
-    {modal && <div className="modal-layer"><button className="drawer-backdrop" aria-label="Fechar modal" onClick={closeModal} /><div className="modal" role="dialog" aria-modal="true" aria-label={modal === 'ofx' ? 'Importar OFX' : 'Importar categorias da DRE'} ref={modalRef}>
-      <header><div><p className="eyebrow">IMPORTAÇÃO ATÔMICA</p><h2>{modal === 'ofx' ? 'Importar OFX' : 'Importar categorias da DRE'}</h2></div><button className="icon-button" aria-label="Fechar" onClick={closeModal}><X size={18} /></button></header>
-      {modal === 'ofx' ? <div>
+    {modal && <div className="modal-layer"><button className="drawer-backdrop" aria-label="Fechar modal" onClick={closeModal} /><div className="modal" role="dialog" aria-modal="true" aria-label={modal === 'ofx' ? 'Importar OFX' : modal === 'category-xlsx' ? 'Importar categorias da DRE' : modal === 'delete-category' ? 'Excluir categoria' : modal === 'delete-rule' ? 'Excluir regra' : modal === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'} ref={modalRef}>
+      <header><div><p className="eyebrow">GESTÃO FINANCEIRA</p><h2>{modal === 'ofx' ? 'Importar OFX' : modal === 'category-xlsx' ? 'Importar categorias da DRE' : modal === 'delete-category' ? 'Excluir categoria' : modal === 'delete-rule' ? 'Excluir regra' : modal === 'category-editor' ? editingCategory ? 'Editar categoria' : 'Nova categoria' : editingRule ? 'Editar regra' : 'Nova regra'}</h2></div><button className="icon-button" aria-label="Fechar" onClick={closeModal}><X size={18} /></button></header>
+      {modal === 'ofx' && <div>
         {!ofx ? <label className="dropzone"><FileUp size={34} /><strong>Escolha um arquivo .ofx</strong><span>SGML 1.x ou XML 2.x · UTF-8 ou Windows-1252</span><input type="file" accept=".ofx" onChange={(event) => void readOfx(event)} /></label> : <>
           <div className="import-summary"><Banknote /><div><strong>{ofx.transactions.length} movimentações</strong><small>Conta OFX {ofx.bankId || '—'} · {ofx.accountId || '—'}</small></div></div>
           <label>Conta cadastrada<select value={importAccountId} onChange={(event) => { setImportAccountId(event.target.value); setAccountConfirmed(accountMatches(accounts.find((item) => item.id === event.target.value), ofx)); }}><option value="">Selecione</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           {!accountMatches(accounts.find((item) => item.id === importAccountId), ofx) && <label className="warning-confirm check-label"><input type="checkbox" checked={accountConfirmed} onChange={(event) => setAccountConfirmed(event.target.checked)} />Confirmo que este OFX pertence à conta selecionada.</label>}
         </>}
         <footer><button className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={!ofx || !importAccountId || busy} onClick={() => void confirmOfx()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}Importar</button></footer>
-      </div> : <div><p className="form-note">A primeira linha deve conter exatamente: <strong>Grupo</strong>, <strong>Categoria</strong> e <strong>Natureza</strong>. Naturezas: Entrada, Saída ou Transferência. Uma linha inválida rejeita o arquivo inteiro.</p><label className="dropzone"><FileSpreadsheet size={34} /><strong>Escolha a planilha .xlsx</strong><span>Upsert por Grupo + Categoria</span><input type="file" accept=".xlsx" onChange={(event) => void importCategoryFile(event)} /></label></div>}
+      </div>}
+      {modal === 'category-xlsx' && <div><p className="form-note">A primeira linha deve conter exatamente: <strong>Grupo</strong>, <strong>Categoria</strong> e <strong>Natureza</strong>. Uma linha inválida rejeita o arquivo inteiro.</p><label className="dropzone"><FileSpreadsheet size={34} /><strong>Escolha a planilha .xlsx</strong><span>Upsert por Grupo + Categoria</span><input type="file" accept=".xlsx" onChange={(event) => void importCategoryFile(event)} /></label></div>}
+      {modal === 'category-editor' && <form onSubmit={(event) => void saveCategoryForm(event)}>
+        <label>Grupo<input name="group" list="category-groups" defaultValue={editingCategory?.group ?? ''} required /><datalist id="category-groups">{[...new Set(categories.map((item) => item.group).filter(Boolean))].map((group) => <option key={group} value={group} />)}</datalist></label>
+        <label>Categoria<input name="name" defaultValue={editingCategory?.name ?? ''} required /></label>
+        <label>Natureza<select name="nature" defaultValue={editingCategory?.nature ?? 'outflow'}><option value="inflow">Entrada</option><option value="outflow">Saída</option><option value="transfer">Transferência</option></select></label>
+        <footer><button type="button" className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={busy}><Save size={16} />Salvar categoria</button></footer>
+      </form>}
+      {modal === 'rule-editor' && <form onSubmit={(event) => void saveRuleForm(event)}>
+        <label>Padrão textual<input name="pattern" defaultValue={editingRule?.pattern ?? ''} required /><small>Use o trecho mais estável do NAME ou MEMO bancário.</small></label>
+        <div className="form-row"><label>Direção<select name="direction" defaultValue={editingRule?.direction ?? 'outflow'}><option value="inflow">Entrada</option><option value="outflow">Saída</option></select></label><label>Conta<select name="accountId" defaultValue={editingRule?.accountId ?? ''}><option value="">Todas as contas</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
+        <label>Categoria<select name="categoryId" defaultValue={editingRule?.categoryId ?? ''} required><option value="">Selecione</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.group} · {item.name}</option>)}</select></label>
+        <label>Terceiro favorecido<select name="counterpartyId" defaultValue={editingRule?.counterpartyId ?? ''}><option value="">Não identificar</option>{counterparties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="check-label"><input name="active" type="checkbox" defaultChecked={editingRule?.active ?? true} />Regra ativa</label>
+        <footer><button type="button" className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={busy}><Save size={16} />Salvar regra</button></footer>
+      </form>}
+      {modal === 'delete-category' && <ConfirmDelete name={`${editingCategory?.group} · ${editingCategory?.name}`} warning="Categorias utilizadas por lançamentos ou regras não podem ser excluídas." busy={busy} cancel={closeModal} confirm={() => void removeCategory()} />}
+      {modal === 'delete-rule' && <ConfirmDelete name={editingRule?.pattern ?? ''} warning="Regras já aplicadas em lançamentos devem ser inativadas, não excluídas." busy={busy} cancel={closeModal} confirm={() => void removeRule()} />}
     </div></div>}
     {notice && <div className="toast" role="status"><CheckCircle2 size={17} />{notice}</div>}
   </div>;
@@ -455,12 +572,25 @@ function MasterView({ title, description, items, disabled, onSubmit, fields }: {
   return <div className="management-grid"><form className="surface reference-form" onSubmit={onSubmit}><fieldset disabled={disabled}><p className="eyebrow">REGISTRO UNIFICADO</p><h2>Novo cadastro</h2><p className="form-note">{description}</p><div className="reference-fields"><label>Nome<input name="name" required /></label>{fields}</div><button className="button primary" type="submit"><Plus size={16} />Salvar cadastro</button></fieldset></form><section className="surface reference-list"><p className="eyebrow">CADASTRADOS</p><h2>{title}</h2>{items.map((item) => <div className="reference-row" key={item.id}><strong>{item.name}</strong><small>{item.bank || item.group || item.document || item.identifier || 'Registro ativo'}</small></div>)}</section></div>;
 }
 
-function CategoriesView({ categories, disabled, openImport }: { categories: FinanceReference[]; disabled: boolean; openImport: () => void }) {
-  return <section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">ESTRUTURA DA DRE</p><h2>Categorias por grupo e natureza</h2><p>Importe a planilha inteira. A validação ocorre antes de qualquer gravação.</p></div><button className="button primary" disabled={disabled} onClick={openImport}><FileSpreadsheet size={16} />Importar .xlsx</button></div><div className="category-grid">{categories.map((item) => <article key={item.id}><span className={`nature-dot ${item.nature}`} /><div><small>{item.group}</small><strong>{item.name}</strong></div><span className="badge neutral">{item.nature === 'inflow' ? 'Entrada' : item.nature === 'transfer' ? 'Transferência' : 'Saída'}</span></article>)}</div></section>;
+function SharedCounterpartiesView({ items }: { items: FinanceReference[] }) {
+  return <section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h2>Terceiros favorecidos ativos</h2><p>Fonte única: Tela Pagamento de Fornecedores. Alterações são feitas no app irmão e aparecem aqui automaticamente.</p></div><span className="badge info">{items.length} ativos</span></div><div className="shared-party-grid">{items.map((item) => <article key={item.id}><span className="icon-wrap"><Users size={15} /></span><div><strong>{item.name}</strong><small>{item.document || 'Documento não informado'} · PIX {item.identifier || 'não informado'}</small></div></article>)}</div></section>;
 }
 
-function RulesView({ rules, accounts }: { rules: ClassificationRule[]; accounts: FinanceReference[] }) {
-  return <section className="surface reference-list"><p className="eyebrow">AUTOMAÇÃO ASSISTIDA</p><h2>Regras de reconhecimento</h2><p className="form-note">Regras apenas sugerem. A classificação só entra no fechamento depois da validação humana.</p><div className="rule-list">{rules.map((rule) => <article key={rule.id}><span className={`rule-state ${rule.active ? 'active' : ''}`} /><div><strong>{rule.pattern}</strong><small>{rule.accountId ? accounts.find((item) => item.id === rule.accountId)?.name : 'Todas as contas'} · {rule.direction === 'inflow' ? 'Entrada' : 'Saída'}</small></div><span><strong>{rule.categoryName}</strong><small>{rule.counterpartyName || 'Sem destinatário'}</small></span></article>)}</div></section>;
+function CategoriesView({ categories, disabled, openImport, add, edit, remove }: { categories: FinanceReference[]; disabled: boolean; openImport: () => void; add: () => void; edit: (item: FinanceReference) => void; remove: (item: FinanceReference) => void }) {
+  const [query, setQuery] = useState('');
+  const visible = categories.filter((item) => normalizeBankText(`${item.group} ${item.name}`).includes(normalizeBankText(query)));
+  const groups = [...new Set(visible.map((item) => item.group ?? 'Sem grupo'))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return <section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">ESTRUTURA DA DRE</p><h2>Grupos e categorias</h2><p>Grupo organiza a DRE. Categoria classifica cada movimentação bancária.</p></div><div className="topbar-actions"><button className="button secondary" disabled={disabled} onClick={openImport}><FileSpreadsheet size={16} />Importar .xlsx</button><button className="button primary" disabled={disabled} onClick={add}><Plus size={16} />Nova categoria</button></div></div><label className="catalog-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar grupo ou categoria" /></label><div className="category-tree">{groups.map((group) => { const items = visible.filter((item) => (item.group ?? 'Sem grupo') === group).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')); return <details className="category-group" key={group} open><summary><span><strong>{group}</strong><small>{items.length} categorias</small></span><span className="badge neutral">{items[0]?.nature === 'inflow' ? 'Entrada' : items[0]?.nature === 'transfer' ? 'Transferência' : 'Saída'}</span></summary><div>{items.map((item) => <article key={item.id}><span className={`nature-dot ${item.nature}`} /><strong>{item.name}</strong><div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} disabled={disabled} onClick={() => edit(item)}><Pencil size={15} /></button><button className="icon-button danger-action" aria-label={`Excluir ${item.name}`} disabled={disabled} onClick={() => remove(item)}><Trash2 size={15} /></button></div></article>)}</div></details>; })}</div></section>;
+}
+
+function RulesView({ rules, accounts, disabled, add, edit, remove, toggle }: { rules: ClassificationRule[]; accounts: FinanceReference[]; disabled: boolean; add: () => void; edit: (item: ClassificationRule) => void; remove: (item: ClassificationRule) => void; toggle: (item: ClassificationRule) => void }) {
+  const [query, setQuery] = useState('');
+  const visible = rules.filter((rule) => normalizeBankText(`${rule.pattern} ${rule.categoryName} ${rule.counterpartyName ?? ''}`).includes(normalizeBankText(query)));
+  return <section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">AUTOMAÇÃO ASSISTIDA</p><h2>Regras de reconhecimento</h2><p>Regra sugere categoria e favorecido. Usuário ainda valida a movimentação.</p></div><button className="button primary" disabled={disabled} onClick={add}><Plus size={16} />Nova regra</button></div><label className="catalog-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar padrão, categoria ou favorecido" /></label><div className="rule-list">{visible.map((rule) => <article key={rule.id} className={!rule.active ? 'inactive' : ''}><span className={`rule-state ${rule.active ? 'active' : ''}`} /><div><strong>{rule.pattern}</strong><small>{rule.accountId ? accounts.find((item) => item.id === rule.accountId)?.name : 'Todas as contas'} · {rule.direction === 'inflow' ? 'Entrada' : 'Saída'}</small></div><span><strong>{rule.categoryName}</strong><small>{rule.counterpartyName || 'Sem favorecido'}</small></span><div className="row-actions"><button className="button ghost compact" disabled={disabled} onClick={() => toggle(rule)}>{rule.active ? 'Inativar' : 'Ativar'}</button><button className="icon-button" aria-label={`Editar regra ${rule.pattern}`} disabled={disabled} onClick={() => edit(rule)}><Pencil size={15} /></button><button className="icon-button danger-action" aria-label={`Excluir regra ${rule.pattern}`} disabled={disabled} onClick={() => remove(rule)}><Trash2 size={15} /></button></div></article>)}</div></section>;
+}
+
+function ConfirmDelete({ name, warning, busy, cancel, confirm }: { name: string; warning: string; busy: boolean; cancel: () => void; confirm: () => void }) {
+  return <div className="confirm-delete"><span className="confirm-icon"><Trash2 size={22} /></span><h3>Excluir “{name}”?</h3><p>{warning}</p><footer><button className="button secondary" onClick={cancel}>Cancelar</button><button className="button primary danger-button" disabled={busy} onClick={confirm}><Trash2 size={16} />Excluir</button></footer></div>;
 }
 
 function ImportsView({ imports, entries, reverse, disabled }: { imports: FinanceReference[]; entries: CashflowEntry[]; reverse: (id: string) => Promise<void>; disabled: boolean }) {

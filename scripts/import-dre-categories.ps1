@@ -1,10 +1,12 @@
 param(
   [Parameter(Mandatory = $true)][string]$EnvironmentUrl,
   [string]$CsvPath = '',
+  [switch]$PruneMissing,
   [switch]$DeviceCode
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if ([string]::IsNullOrWhiteSpace($CsvPath)) {
   $CsvPath = Join-Path $PSScriptRoot '..\data\categorias-dre.csv'
 }
@@ -65,6 +67,7 @@ $lines = @("--$batch","Content-Type: multipart/mixed; boundary=$change",'')
 $contentId = 1
 $created = 0
 $updated = 0
+$deleted = 0
 foreach ($row in $rows) {
   $key = "$(Normalize $row.Group)|$(Normalize $row.Category)"
   $id = $existingByKey[$key]
@@ -84,6 +87,21 @@ foreach ($row in $rows) {
   )
   $contentId++
 }
+$sourceGroups = @{}
+foreach ($row in $rows) { $sourceGroups[(Normalize $row.Group)] = $true }
+if ($PruneMissing) {
+  foreach ($item in $existing) {
+    $key = "$(Normalize $item.cr40f_grupo)|$(Normalize $item.cr40f_name)"
+    if ($sourceGroups.ContainsKey((Normalize $item.cr40f_grupo)) -and -not $seen.ContainsKey($key)) {
+      $lines += @(
+        "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary',"Content-ID: $contentId",'',
+        "DELETE /api/data/v9.2/cr40f_fluxocaixacategorias($($item.cr40f_fluxocaixacategoriaid)) HTTP/1.1",'If-Match: *',''
+      )
+      $contentId++
+      $deleted++
+    }
+  }
+}
 $auditBody = @{
   cr40f_name = 'Importacao de categorias da DRE'
   cr40f_acao = 'Importacao de categorias'
@@ -100,7 +118,7 @@ $text = [string]$response.Content
 if ($response.StatusCode -ne 200 -or $text -match 'HTTP/1.1 [45]\d\d') { throw "Atomic category import rejected: $text" }
 
 $live = @((Invoke-RestMethod -Method Get -Uri "$base/cr40f_fluxocaixacategorias?`$select=cr40f_name,cr40f_grupo,cr40f_natureza&`$top=5000" -Headers $headers).value)
-if ($live.Count -ne $rows.Count) { throw "Live category count mismatch. source=$($rows.Count) live=$($live.Count)" }
+if ($PruneMissing -and $live.Count -ne $rows.Count) { throw "Live category count mismatch. source=$($rows.Count) live=$($live.Count)" }
 $liveByKey = @{}
 foreach ($item in $live) {
   $liveByKey["$(Normalize $item.cr40f_grupo)|$(Normalize $item.cr40f_name)"] = $item
@@ -112,4 +130,4 @@ foreach ($row in $rows) {
     throw "Live category mismatch: $key"
   }
 }
-Write-Host "[import-dre] source=$($rows.Count) created=$created updated=$updated live=$($live.Count) exact-match=true"
+Write-Host "[import-dre] source=$($rows.Count) created=$created updated=$updated deleted=$deleted live=$($live.Count) exact-match=true"

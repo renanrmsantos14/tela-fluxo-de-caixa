@@ -78,15 +78,37 @@ button,input,select { font:inherit; } button { cursor:pointer; } button:disabled
 .nature-dot.inflow,.rule-state.active { background:var(--bt-color-success); }
 .nature-dot.transfer { background:var(--bt-color-action); }
 .rule-list { margin-top:18px; border-top:1px solid var(--bt-surface-border); }
-.rule-list article { min-height:66px; display:grid; grid-template-columns:8px minmax(200px,1fr) minmax(180px,.8fr); gap:12px; align-items:center; border-bottom:1px solid var(--bt-surface-border); }
+.rule-list article { min-height:66px; display:grid; grid-template-columns:8px minmax(200px,1fr) minmax(180px,.8fr) auto; gap:12px; align-items:center; border-bottom:1px solid var(--bt-surface-border); }
 .rule-list strong,.rule-list small { display:block; }
 .rule-list small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
+.rule-list article.inactive { opacity:.62; }
 .import-row { min-height:68px; display:flex; justify-content:space-between; align-items:center; gap:16px; border-bottom:1px solid var(--bt-surface-border); }
 .import-row strong,.import-row small { display:block; }
 .import-row small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
 .drawer-edit label small { color:var(--bt-color-text-secondary); font-size:10px; font-weight:500; line-height:1.45; }
 .status-line.suggested { color:var(--bt-color-action); }
 .status-line.validated { color:var(--bt-color-success); }
+.catalog-search { max-width:560px; display:flex; align-items:center; gap:8px; height:40px; margin:18px 0; padding:0 11px; border:1px solid var(--bt-surface-border); border-radius:9px; color:var(--bt-color-text-secondary); background:var(--bt-surface-background-neutral); }
+.catalog-search input { flex:1; min-width:0; border:0; outline:0; color:var(--bt-color-text-control); background:transparent; }
+.category-tree { display:grid; gap:10px; }
+.category-group { overflow:hidden; border:1px solid var(--bt-surface-border); border-radius:10px; background:var(--bt-surface-background-neutral); }
+.category-group summary { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:0 14px; cursor:pointer; list-style:none; }
+.category-group summary::-webkit-details-marker { display:none; }
+.category-group summary strong,.category-group summary small { display:block; }
+.category-group summary small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
+.category-group > div { padding:0 14px; background:var(--bt-surface-background); }
+.category-group article { min-height:52px; display:grid; grid-template-columns:8px minmax(0,1fr) auto; align-items:center; gap:12px; border-top:1px solid var(--bt-surface-border); }
+.row-actions { display:flex; align-items:center; gap:6px; }
+.button.compact { min-height:32px; padding:0 9px; font-size:10px; }
+.shared-party-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:20px; }
+.shared-party-grid article { min-height:66px; display:flex; align-items:center; gap:11px; padding:12px; border:1px solid var(--bt-surface-border); border-radius:10px; background:var(--bt-surface-background-neutral); }
+.shared-party-grid strong,.shared-party-grid small { display:block; }
+.shared-party-grid small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
+.confirm-delete { text-align:center; }
+.confirm-icon { width:48px; height:48px; display:grid; place-items:center; margin:4px auto 14px; border-radius:50%; color:var(--bt-color-danger); background:var(--bt-color-danger-soft); }
+.confirm-delete h3 { margin-bottom:7px; font-size:18px; }
+.confirm-delete p { margin:0 auto 22px; max-width:390px; color:var(--bt-color-text-secondary); line-height:1.55; }
+.danger-button { background:var(--bt-color-danger)!important; }
 
 @media (max-width:1120px) {
   .closing-grid { grid-template-columns:1fr; }
@@ -99,4 +121,6 @@ button,input,select { font:inherit; } button { cursor:pointer; } button:disabled
   .queue-filters { overflow:auto; }
   .queue-filters label { min-width:260px; }
   .closing-grid { grid-template-columns:1fr; }
+  .shared-party-grid { grid-template-columns:1fr; }
+  .rule-list article { min-width:760px; }
 }

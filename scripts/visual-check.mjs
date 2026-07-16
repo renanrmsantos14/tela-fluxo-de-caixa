@@ -65,6 +65,23 @@ try {
   await page.getByRole('dialog', { name: 'Importar OFX' }).waitFor();
   await page.keyboard.press('Escape');
   if (!(await importButton.evaluate((element) => element === document.activeElement))) throw new Error('O modal OFX não restaurou o foco no acionador.');
+  await page.getByRole('button', { name: 'Categorias DRE' }).click();
+  await page.getByRole('heading', { name: 'Grupos e categorias' }).waitFor();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.screenshot({ path: fileURLToPath(new URL('categorias-1440.png', output)) });
+  const newCategory = page.getByRole('button', { name: 'Nova categoria' });
+  await newCategory.focus();
+  await newCategory.click();
+  await page.getByRole('heading', { name: 'Nova categoria' }).waitFor();
+  await page.keyboard.press('Escape');
+  if (!(await newCategory.evaluate((element) => element === document.activeElement))) throw new Error('O modal de categoria não restaurou o foco.');
+  await page.getByRole('button', { name: 'Regras' }).click();
+  await page.getByRole('heading', { name: 'Regras de reconhecimento' }).waitFor();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.screenshot({ path: fileURLToPath(new URL('regras-1440.png', output)) });
+  await page.getByRole('button', { name: 'Nova regra' }).click();
+  await page.getByRole('heading', { name: 'Nova regra' }).waitFor();
+  await page.keyboard.press('Escape');
   await context.close();
   console.log('[visual-check] 1440/1120/390, Axe, Manrope, overflow e foco: ok');
 } finally {

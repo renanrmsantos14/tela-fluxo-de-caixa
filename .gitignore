@@ -8,3 +8,4 @@ graphify-out/
 .env.local
 .playwright-cli/
 output/playwright/
+.build-webresource-temp-*/

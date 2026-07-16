@@ -1,6 +1,6 @@
 {
   "name": "betinhos-fluxo-caixa",
-  "version": "0.1.18",
+  "version": "0.1.20",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,9 @@
     "migrate:dataverse": "node scripts/run-dataverse-script.mjs scripts/migrate-dataverse.ps1",
     "reset:v0-test-data": "node scripts/run-dataverse-script.mjs scripts/reset-v0-test-data.ps1 -ConfirmReset",
     "import:dre-categories": "node scripts/run-dataverse-script.mjs scripts/import-dre-categories.ps1",
+    "inspect:favorecido": "node scripts/run-dataverse-script.mjs scripts/inspect-favorecido-metadata.ps1",
     "smoke:dataverse": "node scripts/run-dataverse-script.mjs scripts/smoke-dataverse.ps1",
+    "smoke:masters": "node scripts/run-dataverse-script.mjs scripts/smoke-master-data.ps1",
     "push": "node scripts/bump-version.mjs && node scripts/run-dataverse-script.mjs scripts/deploy-webresource.ps1",
     "setup:environment": "npm install && npm run provision:dataverse && npm run provision:security && npm run remove:legacy-flow && npm run repair:encoding && npm run push",
     "setup:dev": "npm run setup:environment"
