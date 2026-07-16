@@ -18,6 +18,27 @@ export async function fingerprintOfx(source: string): Promise<string> {
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export function decodeOfxBytes(bytes: Uint8Array): string {
+  const header = new TextDecoder('latin1').decode(bytes.slice(0, Math.min(bytes.length, 512)));
+  const declared = /ENCODING\s*:\s*([^\r\n]+)/i.exec(header)?.[1]?.trim().toLowerCase();
+  const encoding = declared?.includes('1252') || declared?.includes('windows') || declared?.includes('latin') || declared?.includes('iso-8859-1')
+    ? 'windows-1252'
+    : 'utf-8';
+  return new TextDecoder(encoding).decode(bytes);
+}
+
+async function sha256(value: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function transactionKey(result: OfxImportResult, transaction: OfxTransaction, accountId: string): Promise<string> {
+  const identity = transaction.fitId?.trim()
+    ? `${accountId}|fitid|${transaction.fitId.trim()}`
+    : `${accountId}|fallback|${result.bankId ?? ''}|${result.accountId ?? ''}|${transaction.date}|${transaction.amount.toFixed(2)}|${transaction.description.trim().toLocaleLowerCase('pt-BR')}`;
+  return sha256(identity);
+}
+
 export async function parseOfx(source: string): Promise<OfxImportResult> {
   const blocks = source.match(/<STMTTRN>[\s\S]*?(?=<STMTTRN>|<\/BANKTRANLIST>|$)/gi) ?? [];
   const transactions: OfxTransaction[] = blocks.map((block, index) => {

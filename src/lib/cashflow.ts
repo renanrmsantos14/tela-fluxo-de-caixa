@@ -1,5 +1,5 @@
 import { addDays, isSameWeek, startOfWeek } from './date';
-import type { CashflowEntry, ReconciliationSuggestion } from '../types';
+import type { BusinessDayPolicy, CashflowEntry, CashflowMode, ReconciliationSuggestion } from '../types';
 
 export const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -9,7 +9,25 @@ export function signedAmount(entry: CashflowEntry): number {
 }
 
 export function included(entry: CashflowEntry): boolean {
-  return entry.status !== 'ignored' && entry.status !== 'reversed' && (entry.kind === 'forecast' || entry.status === 'reconciled');
+  if (entry.status === 'ignored' || entry.status === 'reversed') return false;
+  return (entry.kind === 'forecast' && entry.status === 'open') || (entry.kind === 'actual' && entry.status === 'reconciled');
+}
+
+function validForecast(entry: CashflowEntry): boolean {
+  return entry.kind === 'forecast' && entry.status !== 'ignored' && entry.status !== 'reversed';
+}
+
+function validActual(entry: CashflowEntry): boolean {
+  return entry.kind === 'actual' && entry.status === 'reconciled';
+}
+
+export function amountForMode(entries: CashflowEntry[], mode: CashflowMode): number {
+  const forecast = entries.filter(validForecast).reduce((sum, entry) => sum + signedAmount(entry), 0);
+  const actual = entries.filter(validActual).reduce((sum, entry) => sum + signedAmount(entry), 0);
+  if (mode === 'forecast') return forecast;
+  if (mode === 'actual') return actual;
+  if (mode === 'difference') return actual - forecast;
+  return entries.filter(included).reduce((sum, entry) => sum + signedAmount(entry), 0);
 }
 
 export function buildWeeks(anchor = new Date(), count = 26): Date[] {
@@ -45,4 +63,55 @@ export function suggestReconciliations(entries: CashflowEntry[]): Reconciliation
     usedForecasts.add(candidate.id);
     return [{ actual, forecast: candidate, confidence: actual.description.toLowerCase().includes(candidate.description.toLowerCase().slice(0, 8)) ? 'high' : 'medium' }];
   });
+}
+
+function isoDate(year: number, month: number, day: number): string {
+  return new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+}
+
+function isBusinessDay(value: string, holidays: Set<string>): boolean {
+  const day = new Date(`${value}T12:00:00Z`).getUTCDay();
+  return day !== 0 && day !== 6 && !holidays.has(value);
+}
+
+export function adjustBusinessDate(value: string, policy: BusinessDayPolicy, holidays: string[]): string {
+  if (policy === 'same') return value;
+  const holidaySet = new Set(holidays);
+  let date = new Date(`${value}T12:00:00Z`);
+  while (!isBusinessDay(date.toISOString().slice(0, 10), holidaySet)) {
+    date = new Date(date.getTime() + (policy === 'next' ? 1 : -1) * 86_400_000);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+export function generateRecurrenceDates(input: {
+  start: string;
+  end: string;
+  frequency: 'weekly' | 'monthly' | 'annual' | 'custom';
+  intervalDays?: number;
+  businessDayPolicy?: BusinessDayPolicy;
+  holidays?: string[];
+}): string[] {
+  const start = new Date(`${input.start}T12:00:00Z`);
+  const end = new Date(`${input.end}T12:00:00Z`);
+  const anchorDay = start.getUTCDate();
+  const dates: string[] = [];
+  let index = 0;
+  while (true) {
+    let candidate: Date;
+    if (input.frequency === 'monthly' || input.frequency === 'annual') {
+      const monthOffset = input.frequency === 'annual' ? index * 12 : index;
+      const year = start.getUTCFullYear() + Math.floor((start.getUTCMonth() + monthOffset) / 12);
+      const month = (start.getUTCMonth() + monthOffset) % 12;
+      const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      candidate = new Date(`${isoDate(year, month, Math.min(anchorDay, lastDay))}T12:00:00Z`);
+    } else {
+      const interval = input.frequency === 'weekly' ? 7 : Math.max(1, input.intervalDays ?? 1);
+      candidate = new Date(start.getTime() + index * interval * 86_400_000);
+    }
+    if (candidate > end) break;
+    dates.push(adjustBusinessDate(candidate.toISOString().slice(0, 10), input.businessDayPolicy ?? 'same', input.holidays ?? []));
+    index += 1;
+  }
+  return dates;
 }

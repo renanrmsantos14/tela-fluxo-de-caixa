@@ -2,11 +2,14 @@ export type RuntimeMode = 'xrm' | 'direct' | 'mock';
 export type EntryKind = 'forecast' | 'actual';
 export type EntryNature = 'inflow' | 'outflow' | 'transfer';
 export type EntryStatus = 'open' | 'reconciled' | 'ignored' | 'reversed';
+export type CashflowMode = 'all' | 'forecast' | 'actual' | 'difference';
+export type BusinessDayPolicy = 'same' | 'previous' | 'next';
 
 export interface CashflowEntry {
   id: string;
   description: string;
   category: string;
+  categoryId?: string;
   group: string;
   amount: number;
   date: string;
@@ -15,7 +18,9 @@ export interface CashflowEntry {
   status: EntryStatus;
   source: 'ofx' | 'order' | 'manual' | 'recurrence';
   account?: string;
+  accountId?: string;
   counterparty?: string;
+  counterpartyId?: string;
   originalDate?: string;
   originalDescription?: string;
   fitId?: string;
@@ -33,9 +38,14 @@ export interface FinanceReference {
   nature?: EntryNature;
   bank?: string;
   identifier?: string;
+  document?: string;
   amount?: number;
   category?: string;
+  categoryId?: string;
+  accountId?: string;
+  counterpartyId?: string;
   frequency?: 'weekly' | 'monthly' | 'annual' | 'custom';
+  businessDayPolicy?: BusinessDayPolicy;
   intervalDays?: number;
   start?: string;
   end?: string;
@@ -89,7 +99,30 @@ export interface OrderMapping {
   entitySetName: string;
   amountField: string;
   idField: string;
-  dueDateField?: string;
-  issueDateField?: string;
-  statusFilter?: string;
+  nameField: string;
+  dueDateField: string;
+  statusField: string;
+  activeStatusValue: string | number | boolean;
+  categoryId?: string;
+  categoryName: string;
+  counterpartyField?: string;
+}
+
+export interface MetadataOption {
+  value: string;
+  label: string;
+}
+
+export interface MetadataAttribute {
+  logicalName: string;
+  displayName: string;
+  attributeType: string;
+  options?: MetadataOption[];
+}
+
+export interface MetadataEntity {
+  logicalName: string;
+  entitySetName: string;
+  displayName: string;
+  attributes: MetadataAttribute[];
 }

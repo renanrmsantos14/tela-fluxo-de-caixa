@@ -1,17 +1,24 @@
 {
   "name": "betinhos-fluxo-caixa",
-  "version": "0.1.6",
+  "version": "0.1.10",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/bump-version.mjs && node scripts/dev-with-port.mjs",
     "design:check": "node scripts/design-check.mjs",
-    "check": "tsc --noEmit && npm run test && npm run design:check && npm run build && node scripts/verify-webresource.mjs",
+    "visual:check": "node scripts/visual-check.mjs",
+    "check": "node scripts/verify-encoding.mjs && tsc --noEmit && npm run test && npm run design:check && npm run build && npm run visual:check && node scripts/verify-webresource.mjs && node scripts/verify-portability.mjs",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "build": "node scripts/build-webresource.mjs",
-    "provision:dataverse": "powershell -ExecutionPolicy Bypass -File scripts/provision-dataverse.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com/",
-    "push": "node scripts/bump-version.mjs && powershell -ExecutionPolicy Bypass -File scripts/deploy-webresource.ps1 -EnvironmentUrl https://org23b93544.crm2.dynamics.com/ -WebResourceName cr40f_TelaFluxoDeCaixa.html -SolutionUniqueName appbetinhos",
-    "setup:dev": "npm install && npm run provision:dataverse && npm run push"
+    "provision:dataverse": "node scripts/run-dataverse-script.mjs scripts/provision-dataverse.ps1",
+    "provision:security": "node scripts/run-dataverse-script.mjs scripts/provision-security.ps1",
+    "provision:flow": "node scripts/run-dataverse-script.mjs scripts/provision-flow.ps1",
+    "repair:encoding": "node scripts/run-dataverse-script.mjs scripts/repair-encoding.ps1",
+    "migrate:dataverse": "node scripts/run-dataverse-script.mjs scripts/migrate-dataverse.ps1",
+    "smoke:dataverse": "node scripts/run-dataverse-script.mjs scripts/smoke-dataverse.ps1",
+    "push": "node scripts/bump-version.mjs && node scripts/run-dataverse-script.mjs scripts/deploy-webresource.ps1",
+    "setup:environment": "npm install && npm run provision:dataverse && npm run migrate:dataverse && npm run provision:security && npm run provision:flow && npm run repair:encoding && npm run push",
+    "setup:dev": "npm run setup:environment"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.8",
@@ -22,9 +29,11 @@
     "vite": "^6.0.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "playwright": "^1.61.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

@@ -18,10 +18,10 @@ export async function resolveRuntimeContext(): Promise<RuntimeContext> {
   try {
     const response = await fetch(`${clientUrl}/api/data/v9.2/WhoAmI`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (response.ok) return { mode: 'direct', clientUrl };
-  } catch {
-    // Direct URL not authenticated: app remains usable with sample data.
+    throw new Error(`Dataverse recusou a autenticação da URL direta (${response.status}).`);
+  } catch (error) {
+    throw new Error('Não foi possível autenticar a URL direta no Dataverse.', { cause: error });
   }
-  return { mode: 'mock' };
 }
 
 declare global {

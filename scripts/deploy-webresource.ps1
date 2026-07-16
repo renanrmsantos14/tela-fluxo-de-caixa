@@ -8,6 +8,7 @@ param(
   [switch]$NoPublish
 )
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 function Step($message) { Write-Host "[deploy-webresource] $message" }
 function OData($value) { $value.Replace("'", "''") }
 function Property($object, $name) { if ($null -ne $object -and $null -ne $object.PSObject.Properties[$name]) { return $object.PSObject.Properties[$name].Value }; return $null }
@@ -43,4 +44,7 @@ Step "patch $id"; Invoke-RestMethod -Method Patch -Uri "$base/webresourceset($id
 $component = Invoke-RestMethod -Method Get -Uri "$base/solutioncomponents?`$select=solutioncomponentid&`$filter=_solutionid_value eq $($solutionItems[0].solutionid) and objectid eq $id and componenttype eq 61" -Headers $headers
 if (@($component.value).Count -eq 0) { Step "add to $SolutionUniqueName"; Invoke-RestMethod -Method Post -Uri "$base/AddSolutionComponent" -Headers $headers -ContentType 'application/json; charset=utf-8' -Body (@{ComponentId=$id;ComponentType=61;SolutionUniqueName=$SolutionUniqueName;AddRequiredComponents=$false;DoNotIncludeSubcomponents=$true}|ConvertTo-Json) | Out-Null }
 if (-not $NoPublish) { Step "publish $id"; Invoke-RestMethod -Method Post -Uri "$base/PublishXml" -Headers $headers -ContentType 'application/json; charset=utf-8' -Body (@{ParameterXml="<importexportxml><webresources><webresource>$id</webresource></webresources></importexportxml>"}|ConvertTo-Json) | Out-Null }
+Step 'verify remote content'
+$remote = Invoke-RestMethod -Method Get -Uri "$base/webresourceset($id)?`$select=content" -Headers $headers
+if ([string]$remote.content -ne $content) { throw 'O conteúdo remoto não é idêntico ao build local.' }
 Step "ok $WebResourceName | solution=$SolutionUniqueName"
