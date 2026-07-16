@@ -33,3 +33,17 @@ somente validação humana altera o lançamento para `validated`.
 
 O build usa diretório temporário único por processo e troca atômica do HTML
 final. Builds concorrentes não removem `dist/cr40f_TelaFluxoDeCaixa.html`.
+
+## Movimento e feedback
+
+O app usa somente React e CSS para movimento:
+
+- `useAnimatedPresence` mantém modal, drawer e toast por 150 ms durante a saída;
+- elementos presentes recebem `data-state="open|closed"`;
+- tempos e curvas ficam centralizados em variáveis CSS;
+- animações comuns usam `transform` e `opacity`;
+- blur de até 2 px é restrito a textos pequenos durante crossfade;
+- listas limitam o stagger aos primeiros oito itens;
+- `prefers-reduced-motion` remove animações, blur e deslocamentos;
+- foco, Escape e restauração do acionador continuam controlados por
+  `useDialogFocus`.
