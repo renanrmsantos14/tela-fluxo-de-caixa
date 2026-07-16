@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+graphify-out/
+**/graphify-out/
+.superpowers/
+.npm-cache/
