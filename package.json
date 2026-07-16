@@ -1,6 +1,6 @@
 {
   "name": "betinhos-fluxo-caixa",
-  "version": "0.1.12",
+  "version": "0.1.16",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,17 +12,19 @@
     "build": "node scripts/build-webresource.mjs",
     "provision:dataverse": "node scripts/run-dataverse-script.mjs scripts/provision-dataverse.ps1",
     "provision:security": "node scripts/run-dataverse-script.mjs scripts/provision-security.ps1",
-    "provision:flow": "node scripts/run-dataverse-script.mjs scripts/provision-flow.ps1",
+    "remove:legacy-flow": "node scripts/run-dataverse-script.mjs scripts/remove-legacy-flow.ps1",
     "repair:encoding": "node scripts/run-dataverse-script.mjs scripts/repair-encoding.ps1",
     "migrate:dataverse": "node scripts/run-dataverse-script.mjs scripts/migrate-dataverse.ps1",
+    "reset:v0-test-data": "node scripts/run-dataverse-script.mjs scripts/reset-v0-test-data.ps1 -ConfirmReset",
     "smoke:dataverse": "node scripts/run-dataverse-script.mjs scripts/smoke-dataverse.ps1",
     "push": "node scripts/bump-version.mjs && node scripts/run-dataverse-script.mjs scripts/deploy-webresource.ps1",
-    "setup:environment": "npm install && npm run provision:dataverse && npm run migrate:dataverse && npm run provision:security && npm run provision:flow && npm run repair:encoding && npm run push",
+    "setup:environment": "npm install && npm run provision:dataverse && npm run provision:security && npm run remove:legacy-flow && npm run repair:encoding && npm run push",
     "setup:dev": "npm run setup:environment"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.8",
     "@vitejs/plugin-react": "^4.3.4",
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -36,5 +38,8 @@
     "playwright": "^1.61.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

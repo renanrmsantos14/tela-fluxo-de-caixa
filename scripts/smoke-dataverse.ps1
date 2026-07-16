@@ -3,152 +3,176 @@ param(
   [switch]$DeviceCode,
   [switch]$KeepFixtures
 )
-$ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
 function Step($message) { Write-Host "[smoke-dataverse] $message" }
 function Token($url, [switch]$UseDeviceCode) {
-  if (-not (Get-Module -ListAvailable MSAL.PS)) { throw 'MSAL.PS is required.' }
+  if (-not (Get-Module -ListAvailable MSAL.PS)) { throw 'MSAL.PS not found.' }
   Import-Module MSAL.PS -ErrorAction Stop
   $client = New-MsalClientApplication -ClientId '51f81489-12ee-4a9e-aaae-a2591f45987d' -TenantId 'organizations' -RedirectUri ([Uri]'http://localhost')
   Enable-MsalTokenCacheOnDisk -PublicClientApplication $client | Out-Null
   try { return (Get-MsalToken -PublicClientApplication $client -Scopes "$url/user_impersonation" -Silent).AccessToken }
-  catch { if ($UseDeviceCode) { return (Get-MsalToken -PublicClientApplication $client -Scopes "$url/user_impersonation" -DeviceCode).AccessToken }; return (Get-MsalToken -PublicClientApplication $client -Scopes "$url/user_impersonation" -Interactive).AccessToken }
+  catch {
+    if ($UseDeviceCode) { return (Get-MsalToken -PublicClientApplication $client -Scopes "$url/user_impersonation" -DeviceCode).AccessToken }
+    return (Get-MsalToken -PublicClientApplication $client -Scopes "$url/user_impersonation" -Interactive).AccessToken
+  }
 }
 function Request($method, $path, $body = $null, $extraHeaders = @{}) {
-  $requestHeaders=@{}; foreach($key in $headers.Keys){$requestHeaders[$key]=$headers[$key]}; foreach($key in $extraHeaders.Keys){$requestHeaders[$key]=$extraHeaders[$key]}
-  $arguments=@{Method=$method;Uri="$base/$path";Headers=$requestHeaders}
-  if($null-ne $body){$arguments.ContentType='application/json; charset=utf-8';$arguments.Body=($body|ConvertTo-Json -Depth 20 -Compress)}
+  $requestHeaders = @{}
+  foreach ($key in $headers.Keys) { $requestHeaders[$key] = $headers[$key] }
+  foreach ($key in $extraHeaders.Keys) { $requestHeaders[$key] = $extraHeaders[$key] }
+  $arguments = @{Method=$method;Uri="$base/$path";Headers=$requestHeaders}
+  if ($null -ne $body) {
+    $arguments.ContentType = 'application/json; charset=utf-8'
+    $arguments.Body = ($body | ConvertTo-Json -Depth 20 -Compress)
+  }
   return Invoke-RestMethod @arguments
 }
+function Create($set, $idField, $body) {
+  $row = Request 'POST' $set $body
+  $id = [string]$row.$idField
+  if ($id -notmatch '^[0-9a-f-]{36}$') { throw "Dataverse did not return an ID for $set." }
+  return $id
+}
 function Navigation($schemaName) {
-  $result=Request 'GET' "RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata?`$select=ReferencingEntityNavigationPropertyName&`$filter=SchemaName eq '$schemaName'"
-  if(@($result.value).Count-ne 1){throw "Relationship not found: $schemaName"}
+  $result = Request 'GET' "RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata?`$select=ReferencingEntityNavigationPropertyName&`$filter=SchemaName eq '$schemaName'"
+  if (@($result.value).Count -ne 1) { throw "Relacionamento ausente: $schemaName" }
   return [string]$result.value[0].ReferencingEntityNavigationPropertyName
 }
 function Hash($value) {
-  $sha=[Security.Cryptography.SHA256]::Create()
-  try{return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value)))).Replace('-','').ToLowerInvariant()}
-  finally{$sha.Dispose()}
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value)))).Replace('-', '').ToLowerInvariant() }
+  finally { $sha.Dispose() }
 }
-function Batch($body, $batch) {
-  $response=Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/`$batch" -Headers $headers -ContentType "multipart/mixed; boundary=`"$batch`"" -Body ([Text.Encoding]::UTF8.GetBytes($body))
-  $text=[string]$response.Content
-  if($response.StatusCode-ne 200 -or $text-match 'HTTP/1.1 [45]\d\d'){throw "Batch rejected. HTTP=$($response.StatusCode) body=$text"}
-  return $text
-}
-function CreateRow($setName, $body) {
-  $row=Request 'POST' $setName $body
-  $primaryId = switch ($setName) {
-    'cr40f_fluxocaixaimportacaos' { 'cr40f_fluxocaixaimportacaoid' }
-    'cr40f_fluxocaixalancamentos' { 'cr40f_fluxocaixalancamentoid' }
-    default { throw "Primary id is not mapped for $setName" }
-  }
-  $id=[string]$row.$primaryId
-  if($id -notmatch '^[0-9a-f-]{36}$'){throw "No primary id returned for $setName ($primaryId)"}
-  return $id
+function Run-Batch($lines, $batch) {
+  $response = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/`$batch" -Headers $headers -ContentType "multipart/mixed; boundary=$batch" -Body ([Text.Encoding]::UTF8.GetBytes(($lines -join "`r`n")))
+  $text = [string]$response.Content
+  if ($response.StatusCode -ne 200 -or $text -match 'HTTP/1.1 [45]\d\d') { throw "Batch rejeitado: $text" }
 }
 
-$url=$EnvironmentUrl.TrimEnd('/')
-$base="$url/api/data/v9.2"
-$token=Token $url $DeviceCode
-$headers=@{Authorization="Bearer $token";Accept='application/json';'OData-MaxVersion'='4.0';'OData-Version'='4.0';Prefer='return=representation'}
-$navAccountEntry=Navigation 'cr40f_FluxoConta_Lancamentos'
-$navCategoryEntry=Navigation 'cr40f_FluxoCategoria_Lancamentos'
-$navImportEntry=Navigation 'cr40f_FluxoImportacao_Lancamentos'
-$navAccountImport=Navigation 'cr40f_FluxoConta_Importacoes'
-$navReconciliation=Navigation 'cr40f_FluxoLancamento_Conciliados'
-$account=@((Request 'GET' 'cr40f_fluxocaixacontas?$select=cr40f_fluxocaixacontaid,cr40f_name&$top=1').value)|Select-Object -First 1
-$category=@((Request 'GET' 'cr40f_fluxocaixacategorias?$select=cr40f_fluxocaixacategoriaid,cr40f_name,cr40f_grupo,cr40f_natureza&$top=1').value)|Select-Object -First 1
-if(-not $account -or -not $category){throw 'Create at least one account and category before the smoke test.'}
-$stamp=[DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff')
-$fingerprint=Hash "smoke-file-$stamp"
-$transactionKey=Hash "smoke-account-$($account.cr40f_fluxocaixacontaid)-fitid-$stamp"
-$fitId="SMOKE-$stamp"
-$date=[DateTime]::UtcNow.ToString('yyyy-MM-dd')
-$editedDate=[DateTime]::UtcNow.AddDays(1).ToString('yyyy-MM-dd')
-$importId=$null; $duplicateImportId=$null; $actualId=$null; $forecastId=$null; $completed=$false
+$url = $EnvironmentUrl.TrimEnd('/')
+$base = "$url/api/data/v9.2"
+$headers = @{Authorization="Bearer $(Token $url $DeviceCode)";Accept='application/json';'OData-MaxVersion'='4.0';'OData-Version'='4.0';Prefer='return=representation'}
+$navAccountEntry = Navigation 'cr40f_FluxoConta_Lancamentos'
+$navCategoryEntry = Navigation 'cr40f_FluxoCategoria_Lancamentos'
+$navCounterpartyEntry = Navigation 'cr40f_FluxoContraparte_Lancamentos'
+$navImportEntry = Navigation 'cr40f_FluxoImportacao_Lancamentos'
+$navAccountImport = Navigation 'cr40f_FluxoConta_Importacoes'
+$navCategoryRule = Navigation 'cr40f_FluxoCategoria_Regras'
+$navAccountRule = Navigation 'cr40f_FluxoConta_Regras'
+$navCounterpartyRule = Navigation 'cr40f_FluxoContraparte_Regras'
+$navRuleEntry = Navigation 'cr40f_FluxoRegra_Lancamentos'
+
+$stamp = [DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff')
+$date = [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+$fingerprint = Hash "v0-file-$stamp"
+$transactionKey = Hash "v0-account-fitid-$stamp"
+$ids = @{}
 try {
-  Step 'create import and upload original file'
-  $importId=CreateRow 'cr40f_fluxocaixaimportacaos' @{
-    cr40f_name="OFX smoke $stamp";cr40f_fingerprint=$fingerprint;cr40f_conta=[string]$account.cr40f_name;cr40f_status='processing'
-    "$navAccountImport@odata.bind"="/cr40f_fluxocaixacontas($($account.cr40f_fluxocaixacontaid))"
+  Step 'create temporary master data'
+  $ids.account = Create 'cr40f_fluxocaixacontas' 'cr40f_fluxocaixacontaid' @{cr40f_name="SMOKE CONTA $stamp";cr40f_banco='341';cr40f_identificador="SMOKE-$stamp"}
+  $ids.category = Create 'cr40f_fluxocaixacategorias' 'cr40f_fluxocaixacategoriaid' @{cr40f_name="SMOKE FUEL $stamp";cr40f_grupo='Custo operacional';cr40f_natureza='outflow'}
+  $ids.counterparty = Create 'cr40f_fluxocaixacontrapartes' 'cr40f_fluxocaixacontraparteid' @{cr40f_name="SMOKE TICKET LOG $stamp"}
+  $ids.import = Create 'cr40f_fluxocaixaimportacaos' 'cr40f_fluxocaixaimportacaoid' @{
+    cr40f_name="SMOKE OFX $stamp";cr40f_fingerprint=$fingerprint;cr40f_conta="SMOKE CONTA $stamp";cr40f_status='processing'
+    "$navAccountImport@odata.bind"="/cr40f_fluxocaixacontas($($ids.account))"
   }
-  Request 'GET' "cr40f_fluxocaixaimportacaos($importId)?`$select=cr40f_fluxocaixaimportacaoid" | Out-Null
-  $ofx="OFXHEADER:100`r`nDATA:OFXSGML`r`nVERSION:102`r`nSECURITY:NONE`r`nENCODING:USASCII`r`nCHARSET:1252`r`nCOMPRESSION:NONE`r`nOLDFILEUID:NONE`r`nNEWFILEUID:NONE`r`n<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>341<ACCTID>SMOKE<BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>$([DateTime]::UtcNow.ToString('yyyyMMdd'))120000[-3]<TRNAMT>-123.45<FITID>$fitId<NAME>SMOKE DATAVERSE</STMTTRN></BANKTRANLIST></OFX>"
-  $fileHeaders=@{
-    Authorization="Bearer $token";Accept='application/json';'OData-MaxVersion'='4.0';'OData-Version'='4.0'
-    'If-None-Match'='null';'Content-Type'='application/octet-stream';'x-ms-file-name'='smoke.ofx'
+
+  Step 'atomic import'
+  $entry = @{
+    cr40f_name='PAGAMENTO TICKET LOG';cr40f_data=$date;cr40f_valor=123.45;cr40f_origem='ofx';cr40f_tipo='actual'
+    cr40f_natureza='outflow';cr40f_status='suggested';cr40f_conta="SMOKE CONTA $stamp";cr40f_chavetransacao=$transactionKey
+    cr40f_fitid="FIT-$stamp";cr40f_descricaooriginal='PAGAMENTO TICKET LOG';cr40f_dataoriginal=$date
+    cr40f_nameoriginal='TICKET LOG';cr40f_memooriginal='BOLETO TICKET LOG';cr40f_tipoofx='DEBIT';cr40f_checknum="CHK-$stamp"
+    cr40f_textonormalizado='PAGAMENTO TICKET LOG BOLETO TICKET LOG';cr40f_conflitoregra=$false;cr40f_importacaoid=$ids.import
+    "$navAccountEntry@odata.bind"="/cr40f_fluxocaixacontas($($ids.account))"
+    "$navCategoryEntry@odata.bind"="/cr40f_fluxocaixacategorias($($ids.category))"
+    "$navCounterpartyEntry@odata.bind"="/cr40f_fluxocaixacontrapartes($($ids.counterparty))"
+    "$navImportEntry@odata.bind"="/cr40f_fluxocaixaimportacaos($($ids.import))"
   }
-  Invoke-RestMethod -Method Patch -Uri "$base/cr40f_fluxocaixaimportacaos($importId)/cr40f_arquivoofx" -Headers $fileHeaders -Body ([Text.Encoding]::ASCII.GetBytes($ofx)) | Out-Null
+  $batch = "batch_$([guid]::NewGuid().ToString('N'))"
+  $change = "changeset_$([guid]::NewGuid().ToString('N'))"
+  Run-Batch @(
+    "--$batch","Content-Type: multipart/mixed; boundary=$change",'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',
+    'POST /api/data/v9.2/cr40f_fluxocaixalancamentos HTTP/1.1','Content-Type: application/json; charset=utf-8','',
+    ($entry | ConvertTo-Json -Depth 20 -Compress),'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',
+    "PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos($($ids.import)) HTTP/1.1",'Content-Type: application/json; charset=utf-8','',
+    (@{cr40f_status='imported'} | ConvertTo-Json -Compress),'',"--$change--","--$batch--",''
+  ) $batch
+  $created = @((Request 'GET' "cr40f_fluxocaixalancamentos?`$select=cr40f_fluxocaixalancamentoid,cr40f_status,cr40f_memooriginal,cr40f_checknum,cr40f_fitid&`$filter=cr40f_chavetransacao eq '$transactionKey'").value) | Select-Object -First 1
+  if (-not $created) { throw 'Entry was not created.' }
+  $ids.entry = [string]$created.cr40f_fluxocaixalancamentoid
+  if ($created.cr40f_memooriginal -ne 'BOLETO TICKET LOG' -or $created.cr40f_checknum -ne "CHK-$stamp" -or $created.cr40f_fitid -ne "FIT-$stamp") { throw 'Original fields were not preserved.' }
 
-  Step 'atomic import changeset'
-  $batch="batch_$([guid]::NewGuid().ToString('N'))";$change="changeset_$([guid]::NewGuid().ToString('N'))"
-  $entry=@{
-    cr40f_name='SMOKE DATAVERSE';cr40f_data=$date;cr40f_valor=123.45;cr40f_categoria=[string]$category.cr40f_name;cr40f_grupo=[string]$category.cr40f_grupo
-    cr40f_origem='ofx';cr40f_tipo='actual';cr40f_natureza='outflow';cr40f_status='open';cr40f_conta=[string]$account.cr40f_name
-    cr40f_chavetransacao=$transactionKey;cr40f_fitid=$fitId;cr40f_descricaooriginal='SMOKE DATAVERSE';cr40f_dataoriginal=$date;cr40f_importacaoid=$importId
-    "$navAccountEntry@odata.bind"="/cr40f_fluxocaixacontas($($account.cr40f_fluxocaixacontaid))"
-    "$navCategoryEntry@odata.bind"="/cr40f_fluxocaixacategorias($($category.cr40f_fluxocaixacategoriaid))"
-    "$navImportEntry@odata.bind"="/cr40f_fluxocaixaimportacaos($importId)"
+  Step 'bloquear fingerprint duplicado'
+  $blocked = $false
+  try { $ids.duplicate = Create 'cr40f_fluxocaixaimportacaos' 'cr40f_fluxocaixaimportacaoid' @{cr40f_name='SMOKE DUPLICADO';cr40f_fingerprint=$fingerprint;cr40f_status='processing'} }
+  catch { $blocked = $true }
+  if (-not $blocked) { throw 'Fingerprint duplicado foi aceito.' }
+
+  Step 'salvar regra e validar com ETag no mesmo changeset'
+  $fresh = Request 'GET' "cr40f_fluxocaixalancamentos($($ids.entry))?`$select=cr40f_fluxocaixalancamentoid"
+  $etag = [string]$fresh.'@odata.etag'
+  if (-not $etag) { throw 'ETag ausente.' }
+  $batch = "batch_$([guid]::NewGuid().ToString('N'))"
+  $change = "changeset_$([guid]::NewGuid().ToString('N'))"
+  $rule = @{
+    cr40f_name='TICKET LOG TO FUEL';cr40f_expressao='TICKET LOG';cr40f_direcao='outflow';cr40f_ativo=$true;cr40f_categoria="SMOKE FUEL $stamp"
+    "$navCategoryRule@odata.bind"="/cr40f_fluxocaixacategorias($($ids.category))"
+    "$navAccountRule@odata.bind"="/cr40f_fluxocaixacontas($($ids.account))"
+    "$navCounterpartyRule@odata.bind"="/cr40f_fluxocaixacontrapartes($($ids.counterparty))"
   }
-  $lines=@("--$batch","Content-Type: multipart/mixed; boundary=`"$change`"",'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',"POST /api/data/v9.2/cr40f_fluxocaixalancamentos HTTP/1.1",'Content-Type: application/json;type=entry','',($entry|ConvertTo-Json -Depth 10 -Compress),'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',"PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos($importId) HTTP/1.1",'Content-Type: application/json;type=entry','',(@{cr40f_status='imported'}|ConvertTo-Json -Compress),'',"--$change--","--$batch--",'')
-  Batch ($lines-join "`r`n") $batch|Out-Null
-  $actual=@((Request 'GET' "cr40f_fluxocaixalancamentos?`$select=cr40f_fluxocaixalancamentoid,cr40f_name,cr40f_data,cr40f_descricaooriginal,cr40f_dataoriginal,cr40f_status&`$filter=cr40f_chavetransacao eq '$transactionKey'").value)|Select-Object -First 1
-  if(-not $actual){throw 'Atomic import did not create the entry.'};$actualId=[string]$actual.cr40f_fluxocaixalancamentoid
-
-  Step 'duplicate fingerprint block'
-  $blocked=$false
-  try{$duplicateImportId=CreateRow 'cr40f_fluxocaixaimportacaos' @{cr40f_name='SMOKE DUPLICATE';cr40f_fingerprint=$fingerprint;cr40f_status='processing'}}catch{$blocked=$true}
-  if(-not $blocked){throw 'Duplicate fingerprint was accepted.'}
-
-  Step 'edit while preserving original fields'
-  Request 'PATCH' "cr40f_fluxocaixalancamentos($actualId)" @{cr40f_name='SMOKE EDITED';cr40f_data=$editedDate} @{'If-Match'='*'}|Out-Null
-  $edited=Request 'GET' "cr40f_fluxocaixalancamentos($actualId)?`$select=cr40f_name,cr40f_data,cr40f_descricaooriginal,cr40f_dataoriginal"
-  if($edited.cr40f_name-ne 'SMOKE EDITED' -or ([string]$edited.cr40f_data).Substring(0,10)-ne $editedDate -or $edited.cr40f_descricaooriginal-ne 'SMOKE DATAVERSE' -or ([string]$edited.cr40f_dataoriginal).Substring(0,10)-ne $date){throw 'Original OFX fields were changed.'}
-
-  Step 'create forecast and reconcile atomically'
-  $forecastId=CreateRow 'cr40f_fluxocaixalancamentos' @{
-    cr40f_name='SMOKE FORECAST';cr40f_data=$editedDate;cr40f_valor=123.45;cr40f_categoria=[string]$category.cr40f_name;cr40f_grupo=[string]$category.cr40f_grupo
-    cr40f_origem='manual';cr40f_tipo='forecast';cr40f_natureza='outflow';cr40f_status='open'
-    "$navAccountEntry@odata.bind"="/cr40f_fluxocaixacontas($($account.cr40f_fluxocaixacontaid))"
-    "$navCategoryEntry@odata.bind"="/cr40f_fluxocaixacategorias($($category.cr40f_fluxocaixacategoriaid))"
+  $validation = @{
+    cr40f_status='validated';cr40f_datavalidacao=[DateTime]::UtcNow.ToString('o');cr40f_categoria="SMOKE FUEL $stamp";cr40f_grupo='Custo operacional';cr40f_contraparte="SMOKE TICKET LOG $stamp";cr40f_natureza='outflow'
+    "$navCategoryEntry@odata.bind"="/cr40f_fluxocaixacategorias($($ids.category))"
+    "$navCounterpartyEntry@odata.bind"="/cr40f_fluxocaixacontrapartes($($ids.counterparty))"
+    "$navRuleEntry@odata.bind"='$1'
   }
-  $batch="batch_$([guid]::NewGuid().ToString('N'))";$change="changeset_$([guid]::NewGuid().ToString('N'))"
-  $lines=@("--$batch","Content-Type: multipart/mixed; boundary=`"$change`"",'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',"PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($actualId) HTTP/1.1",'Content-Type: application/json;type=entry','',(@{cr40f_status='reconciled';cr40f_conciliadocomid=$forecastId;"$navReconciliation@odata.bind"="/cr40f_fluxocaixalancamentos($forecastId)"}|ConvertTo-Json -Compress),'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',"PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($forecastId) HTTP/1.1",'Content-Type: application/json;type=entry','',(@{cr40f_status='reconciled';cr40f_conciliadocomid=$actualId;"$navReconciliation@odata.bind"="/cr40f_fluxocaixalancamentos($actualId)"}|ConvertTo-Json -Compress),'',"--$change--","--$batch--",'')
-  Batch ($lines-join "`r`n") $batch|Out-Null
+  Run-Batch @(
+    "--$batch","Content-Type: multipart/mixed; boundary=$change",'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',
+    'POST /api/data/v9.2/cr40f_fluxocaixaregras HTTP/1.1','Content-Type: application/json; charset=utf-8','',($rule | ConvertTo-Json -Depth 20 -Compress),'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',
+    "PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($($ids.entry)) HTTP/1.1",'Content-Type: application/json; charset=utf-8',"If-Match: $etag",'',
+    ($validation | ConvertTo-Json -Depth 20 -Compress),'',"--$change--","--$batch--",''
+  ) $batch
+  $validated = Request 'GET' "cr40f_fluxocaixalancamentos($($ids.entry))?`$select=cr40f_status,_cr40f_regraref_value"
+  if ($validated.cr40f_status -ne 'validated' -or -not $validated._cr40f_regraref_value) { throw 'Rule and validation were not confirmed.' }
+  $ids.rule = [string]$validated._cr40f_regraref_value
 
-  Step 'atomic reversal reopens forecast'
-  $batch="batch_$([guid]::NewGuid().ToString('N'))";$change="changeset_$([guid]::NewGuid().ToString('N'))"
-  $actualReverse=@{cr40f_status='reversed';cr40f_conciliadocomid=$null;"$navReconciliation@odata.bind"=$null}
-  $forecastOpen=@{cr40f_status='open';cr40f_conciliadocomid=$null;"$navReconciliation@odata.bind"=$null}
-  $lines=@("--$batch","Content-Type: multipart/mixed; boundary=`"$change`"",'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',"PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($actualId) HTTP/1.1",'Content-Type: application/json;type=entry','',($actualReverse|ConvertTo-Json -Compress),'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',"PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($forecastId) HTTP/1.1",'Content-Type: application/json;type=entry','',($forecastOpen|ConvertTo-Json -Compress),'',"--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 3','',"PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos($importId) HTTP/1.1",'Content-Type: application/json;type=entry','',(@{cr40f_status='reversed'}|ConvertTo-Json -Compress),'',"--$change--","--$batch--",'')
-  Batch ($lines-join "`r`n") $batch|Out-Null
-  $actualFinal=Request 'GET' "cr40f_fluxocaixalancamentos($actualId)?`$select=cr40f_status,_cr40f_conciliadocom_value"
-  $forecastFinal=Request 'GET' "cr40f_fluxocaixalancamentos($forecastId)?`$select=cr40f_status,_cr40f_conciliadocom_value"
-  $importFinal=Request 'GET' "cr40f_fluxocaixaimportacaos($importId)?`$select=cr40f_status"
-  if($actualFinal.cr40f_status-ne 'reversed' -or $actualFinal._cr40f_conciliadocom_value -or $forecastFinal.cr40f_status-ne 'open' -or $forecastFinal._cr40f_conciliadocom_value -or $importFinal.cr40f_status-ne 'reversed'){throw 'Atomic reversal state is invalid.'}
-  $completed=$true
-  Step 'ok import duplicate edit reconcile reverse'
-} finally {
-  if(-not $KeepFixtures){
-    if(-not $actualId){
-      try{
-        $orphan=@((Request 'GET' "cr40f_fluxocaixalancamentos?`$select=cr40f_fluxocaixalancamentoid&`$filter=cr40f_chavetransacao eq '$transactionKey'").value)|Select-Object -First 1
-        if($orphan){$actualId=[string]$orphan.cr40f_fluxocaixalancamentoid}
-      }catch{}
-    }
-    foreach($item in @(@{Set='cr40f_fluxocaixalancamentos';Id=$actualId},@{Set='cr40f_fluxocaixalancamentos';Id=$forecastId},@{Set='cr40f_fluxocaixaimportacaos';Id=$duplicateImportId},@{Set='cr40f_fluxocaixaimportacaos';Id=$importId})){
-      if($item.Id){try{Request 'DELETE' "$($item.Set)($($item.Id))"|Out-Null}catch{Step "cleanup warning $($item.Set)($($item.Id))"}}
-    }
-    try {
-      $remainingEntries=@((Request 'GET' "cr40f_fluxocaixalancamentos?`$select=cr40f_fluxocaixalancamentoid&`$filter=cr40f_chavetransacao eq '$transactionKey'").value).Count
-      $remainingImports=@((Request 'GET' "cr40f_fluxocaixaimportacaos?`$select=cr40f_fluxocaixaimportacaoid&`$filter=cr40f_fingerprint eq '$fingerprint'").value).Count
-      if($remainingEntries -or $remainingImports){
-        $message="cleanup left entries=$remainingEntries imports=$remainingImports"
-        if($completed){throw $message};Step "warning $message"
+  Step 'reverter lote completo'
+  $batch = "batch_$([guid]::NewGuid().ToString('N'))"
+  $change = "changeset_$([guid]::NewGuid().ToString('N'))"
+  Run-Batch @(
+    "--$batch","Content-Type: multipart/mixed; boundary=$change",'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 1','',
+    "PATCH /api/data/v9.2/cr40f_fluxocaixalancamentos($($ids.entry)) HTTP/1.1",'Content-Type: application/json; charset=utf-8','',(@{cr40f_status='reversed'} | ConvertTo-Json -Compress),'',
+    "--$change",'Content-Type: application/http','Content-Transfer-Encoding: binary','Content-ID: 2','',
+    "PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos($($ids.import)) HTTP/1.1",'Content-Type: application/json; charset=utf-8','',(@{cr40f_status='reversed'} | ConvertTo-Json -Compress),'',
+    "--$change--","--$batch--",''
+  ) $batch
+  $final = Request 'GET' "cr40f_fluxocaixalancamentos($($ids.entry))?`$select=cr40f_status"
+  if ($final.cr40f_status -ne 'reversed') { throw 'Reversal was not confirmed.' }
+  Step 'ok: import originals duplicate rule etag validation reversal'
+}
+finally {
+  if (-not $KeepFixtures) {
+    foreach ($item in @(
+      @{Set='cr40f_fluxocaixalancamentos';Id=$ids['entry']},
+      @{Set='cr40f_fluxocaixaregras';Id=$ids['rule']},
+      @{Set='cr40f_fluxocaixaimportacaos';Id=$ids['duplicate']},
+      @{Set='cr40f_fluxocaixaimportacaos';Id=$ids['import']},
+      @{Set='cr40f_fluxocaixacontrapartes';Id=$ids['counterparty']},
+      @{Set='cr40f_fluxocaixacategorias';Id=$ids['category']},
+      @{Set='cr40f_fluxocaixacontas';Id=$ids['account']}
+    )) {
+      if ($item.Id) {
+        try { Request 'DELETE' "$($item.Set)($($item.Id))" | Out-Null }
+        catch { Step "aviso de limpeza: $($item.Set)($($item.Id))" }
       }
-    } catch {
-      if($completed){throw};Step 'cleanup verification warning'
     }
   }
 }

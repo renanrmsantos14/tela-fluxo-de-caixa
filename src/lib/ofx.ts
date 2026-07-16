@@ -19,12 +19,11 @@ export async function fingerprintOfx(source: string): Promise<string> {
 }
 
 export function decodeOfxBytes(bytes: Uint8Array): string {
-  const header = new TextDecoder('latin1').decode(bytes.slice(0, Math.min(bytes.length, 512)));
-  const declared = /ENCODING\s*:\s*([^\r\n]+)/i.exec(header)?.[1]?.trim().toLowerCase();
-  const encoding = declared?.includes('1252') || declared?.includes('windows') || declared?.includes('latin') || declared?.includes('iso-8859-1')
-    ? 'windows-1252'
-    : 'utf-8';
-  return new TextDecoder(encoding).decode(bytes);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
 }
 
 async function sha256(value: string): Promise<string> {
@@ -49,9 +48,12 @@ export async function parseOfx(source: string): Promise<OfxImportResult> {
     if (!Number.isFinite(amount)) throw new Error(`Valor OFX inválido na transação ${index + 1}.`);
     return {
       fitId: tag(block, 'FITID'),
+      checkNumber: tag(block, 'CHECKNUM'),
+      referenceNumber: tag(block, 'REFNUM'),
       date: parseOfxDate(rawDate),
       amount,
       description: tag(block, 'NAME') ?? tag(block, 'MEMO') ?? 'Transação sem descrição',
+      name: tag(block, 'NAME'),
       memo: tag(block, 'MEMO'),
       type: tag(block, 'TRNTYPE')
     };

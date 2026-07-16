@@ -1,9 +1,7 @@
 export type RuntimeMode = 'xrm' | 'direct' | 'mock';
-export type EntryKind = 'forecast' | 'actual';
 export type EntryNature = 'inflow' | 'outflow' | 'transfer';
-export type EntryStatus = 'open' | 'reconciled' | 'ignored' | 'reversed';
-export type CashflowMode = 'all' | 'forecast' | 'actual' | 'difference';
-export type BusinessDayPolicy = 'same' | 'previous' | 'next';
+export type ClassificationStatus = 'pending' | 'suggested' | 'validated' | 'reversed';
+export type EntryStatus = ClassificationStatus;
 
 export interface CashflowEntry {
   id: string;
@@ -13,16 +11,25 @@ export interface CashflowEntry {
   group: string;
   amount: number;
   date: string;
-  kind: EntryKind;
+  kind: 'actual';
   nature: EntryNature;
   status: EntryStatus;
-  source: 'ofx' | 'order' | 'manual' | 'recurrence';
+  source: 'ofx';
   account?: string;
   accountId?: string;
   counterparty?: string;
   counterpartyId?: string;
   originalDate?: string;
   originalDescription?: string;
+  originalMemo?: string;
+  originalName?: string;
+  bankTransactionType?: string;
+  checkNumber?: string;
+  referenceNumber?: string;
+  normalizedText?: string;
+  ruleId?: string;
+  ruleConflict?: boolean;
+  validatedAt?: string;
   fitId?: string;
   transactionKey?: string;
   originId?: string;
@@ -44,11 +51,6 @@ export interface FinanceReference {
   categoryId?: string;
   accountId?: string;
   counterpartyId?: string;
-  frequency?: 'weekly' | 'monthly' | 'annual' | 'custom';
-  businessDayPolicy?: BusinessDayPolicy;
-  intervalDays?: number;
-  start?: string;
-  end?: string;
   date?: string;
   expression?: string;
   recipients?: string;
@@ -62,8 +64,11 @@ export interface OfxTransaction {
   date: string;
   amount: number;
   description: string;
+  name?: string;
   memo?: string;
   type?: string;
+  checkNumber?: string;
+  referenceNumber?: string;
 }
 
 export interface OfxImportResult {
@@ -88,41 +93,21 @@ export interface XrmLike {
   Utility?: { getGlobalContext: () => { getClientUrl: () => string } };
 }
 
-export interface ReconciliationSuggestion {
-  actual: CashflowEntry;
-  forecast: CashflowEntry;
-  confidence: 'high' | 'medium';
-}
-
-export interface OrderMapping {
-  entityLogicalName: string;
-  entitySetName: string;
-  amountField: string;
-  idField: string;
-  nameField: string;
-  dueDateField: string;
-  statusField: string;
-  activeStatusValue: string | number | boolean;
-  categoryId?: string;
+export interface ClassificationRule {
+  id: string;
+  name: string;
+  pattern: string;
+  direction: 'inflow' | 'outflow';
+  accountId?: string;
+  categoryId: string;
   categoryName: string;
-  counterpartyField?: string;
+  group: string;
+  counterpartyId?: string;
+  counterpartyName?: string;
+  active: boolean;
 }
 
-export interface MetadataOption {
-  value: string;
-  label: string;
-}
-
-export interface MetadataAttribute {
-  logicalName: string;
-  displayName: string;
-  attributeType: string;
-  options?: MetadataOption[];
-}
-
-export interface MetadataEntity {
-  logicalName: string;
-  entitySetName: string;
-  displayName: string;
-  attributes: MetadataAttribute[];
+export interface RuleMatch {
+  status: 'matched' | 'none' | 'ambiguous';
+  rule?: ClassificationRule;
 }

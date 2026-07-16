@@ -33,7 +33,7 @@ try {
     const consoleErrors = [];
     page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     await page.goto(url, { waitUntil: 'networkidle' });
-    await page.getByRole('heading', { name: 'Fluxo de caixa' }).waitFor();
+    await page.getByRole('heading', { name: 'Fechamento mensal' }).waitFor();
     const family = await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily);
     if (!family.toLowerCase().includes('manrope')) throw new Error(`Manrope não aplicada em ${viewport.width}px: ${family}`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

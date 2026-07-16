@@ -25,6 +25,8 @@ function Token($url, [switch]$UseDeviceCode) {
 }
 function Text($name, $label, $length = 500) { return @{'@odata.type'='Microsoft.Dynamics.CRM.StringAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};MaxLength=$length} }
 function DateField($name, $label) { return @{'@odata.type'='Microsoft.Dynamics.CRM.DateTimeAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};Format='DateOnly'} }
+function DateTimeField($name, $label) { return @{'@odata.type'='Microsoft.Dynamics.CRM.DateTimeAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};Format='DateAndTime';DateTimeBehavior=@{Value='UserLocal'}} }
+function BooleanField($name, $label, $default = $false) { return @{'@odata.type'='Microsoft.Dynamics.CRM.BooleanAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};DefaultValue=$default;OptionSet=@{'@odata.type'='Microsoft.Dynamics.CRM.BooleanOptionSetMetadata';TrueOption=@{Value=1;Label=(Labels 'Sim')};FalseOption=@{Value=0;Label=(Labels 'Não')}}} }
 function Money($name, $label) { return @{'@odata.type'='Microsoft.Dynamics.CRM.MoneyAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};MinValue=-1000000000;MaxValue=1000000000;Precision=2} }
 function FileField($name, $label) { return @{'@odata.type'='Microsoft.Dynamics.CRM.FileAttributeMetadata';SchemaName=$name;DisplayName=(Labels $label);RequiredLevel=@{Value='None'};MaxSizeInKB=10240} }
 function Exists($base, $headers, $logicalName) { return (Invoke-RestMethod -Method Get -Uri "$base/EntityDefinitions?`$select=LogicalName&`$filter=LogicalName eq '$logicalName'" -Headers $headers).value.Count -gt 0 }
@@ -90,6 +92,16 @@ $tables = @(
 foreach ($table in $tables) { $definition = @{'@odata.type'='Microsoft.Dynamics.CRM.EntityMetadata';LogicalName=$table.LogicalName;SchemaName=$table.SchemaName;DisplayName=(Labels $table.Display);DisplayCollectionName=(Labels $table.Plural);OwnershipType='UserOwned';HasNotes=$false;HasActivities=$false;IsActivity=$false;PrimaryNameAttribute='cr40f_name';Attributes=$table.Attributes}; $primary = @($definition.Attributes | Where-Object { $_.SchemaName -eq 'cr40f_name' })[0]; if ($null -eq $primary) { throw "Tabela sem atributo principal cr40f_name: $($table.LogicalName)" }; $primary.IsPrimaryName = $true; if ($table.ContainsKey('IsOptimisticConcurrencyEnabled')) { $definition.IsOptimisticConcurrencyEnabled = $table.IsOptimisticConcurrencyEnabled }; Add-Table $base $headers $definition }
 foreach ($attribute in @(
   @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_contraparte' 'Contraparte legada' 200)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_nameoriginal' 'NAME original do OFX' 500)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_memooriginal' 'MEMO original do OFX' 4000)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_tipoofx' 'TRNTYPE original do OFX' 50)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_checknum' 'CHECKNUM original do OFX' 200)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_refnum' 'REFNUM original do OFX' 200)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_textonormalizado' 'Texto normalizado para reconhecimento' 2000)},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(BooleanField 'cr40f_conflitoregra' 'Conflito entre regras')},
+  @{Table='cr40f_fluxocaixalancamento';Definition=(DateTimeField 'cr40f_datavalidacao' 'Data e hora da validação')},
+  @{Table='cr40f_fluxocaixaregra';Definition=(Text 'cr40f_direcao' 'Direção da movimentação' 20)},
+  @{Table='cr40f_fluxocaixaregra';Definition=(BooleanField 'cr40f_ativo' 'Regra ativa' $true)},
   @{Table='cr40f_fluxocaixarecorrencia';Definition=(Text 'cr40f_ajustevencimento' 'Ajuste de vencimento' 20)},
   @{Table='cr40f_fluxocaixaconfiguracao';Definition=(Text 'cr40f_camponomeop' 'Campo nome OP' 150)},
   @{Table='cr40f_fluxocaixaconfiguracao';Definition=(Text 'cr40f_campostatusop' 'Campo status OP' 150)},
@@ -107,8 +119,12 @@ foreach ($relationship in @(
   @{Schema='cr40f_FluxoCategoria_Recorrencias';Referenced='cr40f_fluxocaixacategoria';Referencing='cr40f_fluxocaixarecorrencia';Lookup='cr40f_CategoriaRef';Label='Categoria'},
   @{Schema='cr40f_FluxoContraparte_Recorrencias';Referenced='cr40f_fluxocaixacontraparte';Referencing='cr40f_fluxocaixarecorrencia';Lookup='cr40f_ContraparteRef';Label='Contraparte'},
   @{Schema='cr40f_FluxoCategoria_Regras';Referenced='cr40f_fluxocaixacategoria';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_CategoriaRef';Label='Categoria'},
+  @{Schema='cr40f_FluxoConta_Regras';Referenced='cr40f_fluxocaixaconta';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_ContaRef';Label='Conta'},
+  @{Schema='cr40f_FluxoContraparte_Regras';Referenced='cr40f_fluxocaixacontraparte';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_ContraparteRef';Label='Destinatário'},
+  @{Schema='cr40f_FluxoRegra_Lancamentos';Referenced='cr40f_fluxocaixaregra';Referencing='cr40f_fluxocaixalancamento';Lookup='cr40f_RegraRef';Label='Regra aplicada'},
   @{Schema='cr40f_FluxoCategoria_Configuracao';Referenced='cr40f_fluxocaixacategoria';Referencing='cr40f_fluxocaixaconfiguracao';Lookup='cr40f_CategoriaOpRef';Label='Categoria padrão OP'}
 )) { Ensure-Relationship $base $headers $relationship.Schema $relationship.Referenced $relationship.Referencing $relationship.Lookup $relationship.Label }
 Ensure-Key $base $headers 'cr40f_fluxocaixalancamento' 'cr40f_FluxoCaixaLancamento_ChaveTransacao' 'Chave única de transação OFX' @('cr40f_chavetransacao')
 Ensure-Key $base $headers 'cr40f_fluxocaixaimportacao' 'cr40f_FluxoCaixaImportacao_Fingerprint' 'Hash único do arquivo OFX' @('cr40f_fingerprint')
-Step 'ok. Configure permissões e mapeamento de OP em cr40f_fluxocaixaconfiguracao.'
+Ensure-Key $base $headers 'cr40f_fluxocaixacategoria' 'cr40f_FluxoCaixaCategoria_GrupoNome' 'Grupo e categoria únicos' @('cr40f_grupo','cr40f_name')
+Step 'ok. Estrutura de fechamento bancário assistido provisionada.'

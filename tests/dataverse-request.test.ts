@@ -22,13 +22,13 @@ test('PATCH mantém Content-Type JSON ao adicionar If-Match', async () => {
     date: '2026-07-16',
     kind: 'actual',
     nature: 'outflow',
-    status: 'open',
+    status: 'pending',
     source: 'ofx'
   };
 
   await patchEntry(context, entry, { description: 'Atualizado' });
 
   const headers = new Headers(request?.headers);
-  assert.equal(headers.get('Content-Type'), 'application/json');
+  assert.equal(headers.get('Content-Type'), 'application/json; charset=utf-8');
   assert.equal(headers.get('If-Match'), 'W/"10"');
 });

@@ -1,38 +1,36 @@
-import { addDays, dateOnly, startOfWeek } from '../lib/date';
-import type { CashflowEntry, FinanceReference } from '../types';
-
-const monday = startOfWeek(new Date());
-const day = (offset: number) => dateOnly(addDays(monday, offset));
+import type { CashflowEntry, ClassificationRule, FinanceReference } from '../types';
 
 export const mockAccounts: FinanceReference[] = [
-  { id: 'account-itau', name: 'Itaú · 4521', bank: 'Itaú', identifier: '4521' }
+  { id: 'account-itau', name: 'Itaú · 4521', bank: 'Itaú', identifier: '4521' },
 ];
 
 export const mockCategories: FinanceReference[] = [
-  { id: 'category-receipts', name: 'Recebimentos de clientes', group: 'Operacional', nature: 'inflow' },
-  { id: 'category-people', name: 'Pessoal', group: 'Administrativo', nature: 'outflow' },
-  { id: 'category-structure', name: 'Estrutura', group: 'Administrativo', nature: 'outflow' },
-  { id: 'category-fleet', name: 'Frota', group: 'Operacional', nature: 'outflow' },
-  { id: 'category-fuel', name: 'Combustível', group: 'Operacional', nature: 'outflow' },
-  { id: 'category-transfer', name: 'Transferências internas', group: 'Financeiro', nature: 'transfer' },
-  { id: 'category-unclassified', name: 'A classificar', group: 'A classificar', nature: 'outflow' }
+  { id: 'cat-receipts', name: 'Recebimentos de clientes', group: 'Receita operacional', nature: 'inflow' },
+  { id: 'cat-salary', name: 'Salário operacional', group: 'Custo operacional', nature: 'outflow' },
+  { id: 'cat-fuel', name: 'Combustível', group: 'Custo operacional', nature: 'outflow' },
+  { id: 'cat-meals', name: 'Alimentação', group: 'Despesas administrativas', nature: 'outflow' },
+  { id: 'cat-transfer', name: 'Transferência interna', group: 'Financeiro', nature: 'transfer' },
 ];
 
 export const mockCounterparties: FinanceReference[] = [
-  { id: 'counterparty-vertice', name: 'Grupo Vértice' },
-  { id: 'counterparty-tenaris', name: 'Tenaris' },
-  { id: 'counterparty-apex', name: 'Apex Partners' }
+  { id: 'party-joao', name: 'João' },
+  { id: 'party-ticket', name: 'Ticket Log' },
+  { id: 'party-cl', name: 'CL' },
+];
+
+export const mockRules: ClassificationRule[] = [
+  { id: 'rule-ticket', name: 'Ticket Log → Combustível', pattern: 'TICKET LOG', direction: 'outflow', categoryId: 'cat-fuel', categoryName: 'Combustível', group: 'Custo operacional', counterpartyId: 'party-ticket', counterpartyName: 'Ticket Log', active: true },
+  { id: 'rule-joao', name: 'João → Salário', pattern: 'PIX 102030', direction: 'outflow', categoryId: 'cat-salary', categoryName: 'Salário operacional', group: 'Custo operacional', counterpartyId: 'party-joao', counterpartyName: 'João', active: true },
+  { id: 'rule-cl', name: 'CL → Recebimentos', pattern: 'RECEBIMENTO CL', direction: 'inflow', categoryId: 'cat-receipts', categoryName: 'Recebimentos de clientes', group: 'Receita operacional', counterpartyId: 'party-cl', counterpartyName: 'CL', active: true },
 ];
 
 export const mockEntries: CashflowEntry[] = [
-  { id: 'op-001', description: 'OP 24071 · Atendimento executivo', category: 'Recebimentos de clientes', categoryId: 'category-receipts', group: 'Operacional', amount: 18400, date: day(3), kind: 'forecast', nature: 'inflow', status: 'open', source: 'order', counterparty: 'Grupo Vértice', counterpartyId: 'counterparty-vertice' },
-  { id: 'manual-001', description: 'Folha e benefícios', category: 'Pessoal', group: 'Administrativo', amount: 9300, date: day(4), kind: 'forecast', nature: 'outflow', status: 'open', source: 'manual' },
-  { id: 'rec-001', description: 'Locação garagem', category: 'Estrutura', group: 'Administrativo', amount: 3800, date: day(8), kind: 'forecast', nature: 'outflow', status: 'open', source: 'recurrence' },
-  { id: 'op-002', description: 'OP 24088 · Roadshow corporativo', category: 'Recebimentos de clientes', group: 'Operacional', amount: 26750, date: day(10), kind: 'forecast', nature: 'inflow', status: 'open', source: 'order', counterparty: 'Tenaris' },
-  { id: 'manual-002', description: 'Seguro frota', category: 'Frota', group: 'Operacional', amount: 4200, date: day(12), kind: 'forecast', nature: 'outflow', status: 'open', source: 'manual' },
-  { id: 'ofx-001', description: 'PIX RECEBIDO GRUPO VERTICE', category: 'Recebimentos de clientes', categoryId: 'category-receipts', group: 'Operacional', amount: 18400, date: day(1), kind: 'actual', nature: 'inflow', status: 'reconciled', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau' },
-  { id: 'ofx-002', description: 'DÉBITO AUTO POSTO CENTRAL', category: 'Combustível', categoryId: 'category-fuel', group: 'Operacional', amount: 1250, date: day(2), kind: 'actual', nature: 'outflow', status: 'reconciled', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau' },
-  { id: 'ofx-003', description: 'TED RECEBIDA', category: 'A classificar', categoryId: 'category-unclassified', group: 'A classificar', amount: 2300, date: day(4), kind: 'actual', nature: 'inflow', status: 'open', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau' },
-  { id: 'ofx-004', description: 'TRANSFERÊNCIA ENTRE CONTAS', category: 'Transferências internas', categoryId: 'category-transfer', group: 'Financeiro', amount: 5000, date: day(5), kind: 'actual', nature: 'transfer', status: 'reconciled', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau' },
-  { id: 'op-003', description: 'OP 24102 · Agenda semanal', category: 'Recebimentos de clientes', group: 'Operacional', amount: 11800, date: day(18), kind: 'forecast', nature: 'inflow', status: 'open', source: 'order', counterparty: 'Apex Partners' }
+  { id: 'ofx-1', etag: 'W/"1"', description: 'PIX 102030 JOAO', originalDescription: 'PIX 102030 JOAO', originalMemo: 'Pix enviado para João', bankTransactionType: 'DEBIT', checkNumber: '10021', fitId: 'fit-1', transactionKey: 'account-itau:fit-1', category: 'Salário operacional', categoryId: 'cat-salary', group: 'Custo operacional', counterparty: 'João', counterpartyId: 'party-joao', amount: 2000, date: '2026-07-05', originalDate: '2026-07-05', kind: 'actual', nature: 'outflow', status: 'suggested', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau', normalizedText: 'PIX 102030 JOAO PIX ENVIADO PARA JOAO', ruleId: 'rule-joao' },
+  { id: 'ofx-2', etag: 'W/"2"', description: 'PAGAMENTO TICKET LOG', originalDescription: 'PAGAMENTO TICKET LOG', originalMemo: 'Boleto Ticket Log', bankTransactionType: 'DEBIT', checkNumber: '10022', fitId: 'fit-2', transactionKey: 'account-itau:fit-2', category: 'Combustível', categoryId: 'cat-fuel', group: 'Custo operacional', counterparty: 'Ticket Log', counterpartyId: 'party-ticket', amount: 1380.44, date: '2026-07-08', originalDate: '2026-07-08', kind: 'actual', nature: 'outflow', status: 'validated', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau', validatedAt: '2026-07-09T12:00:00Z', ruleId: 'rule-ticket' },
+  { id: 'ofx-3', etag: 'W/"3"', description: 'RECEBIMENTO CL 4451', originalDescription: 'RECEBIMENTO CL 4451', originalMemo: 'Crédito de cliente CL', bankTransactionType: 'CREDIT', checkNumber: '10023', fitId: 'fit-3', transactionKey: 'account-itau:fit-3', category: 'Recebimentos de clientes', categoryId: 'cat-receipts', group: 'Receita operacional', counterparty: 'CL', counterpartyId: 'party-cl', amount: 9800, date: '2026-07-10', originalDate: '2026-07-10', kind: 'actual', nature: 'inflow', status: 'validated', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau', validatedAt: '2026-07-10T18:00:00Z', ruleId: 'rule-cl' },
+  { id: 'ofx-4', etag: 'W/"4"', description: 'PIX MERCADO CENTRAL', originalDescription: 'PIX MERCADO CENTRAL', originalMemo: 'Pagamento Pix', bankTransactionType: 'DEBIT', checkNumber: '10024', fitId: 'fit-4', transactionKey: 'account-itau:fit-4', category: '', group: '', amount: 89.9, date: '2026-07-11', originalDate: '2026-07-11', kind: 'actual', nature: 'outflow', status: 'pending', source: 'ofx', account: 'Itaú · 4521', accountId: 'account-itau', normalizedText: 'PIX MERCADO CENTRAL PAGAMENTO PIX' },
+];
+
+export const mockAudit: FinanceReference[] = [
+  { id: 'audit-1', name: 'Importação OFX', action: 'Importação OFX', detail: '4 movimentações importadas.', date: '2026-07-11' },
 ];
