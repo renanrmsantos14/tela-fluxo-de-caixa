@@ -32,3 +32,4 @@ button,input,select { font:inherit; } button { cursor:pointer; } button:disabled
 @media (max-width:820px) { .transaction-row { min-width:760px; }.reference-fields { grid-template-columns:1fr; }.settings-side .reference-form { grid-template-columns:1fr; }.settings-side .reference-form > .button { width:100%; } }
 .mobile-version { display:none; }
 @media (max-width:820px) { .mobile-version { display:block; margin:18px 0 0; color:var(--bt-color-text-secondary); font-size:10px; pointer-events:none; } }
+.drawer-edit select { width:100%; height:40px; padding:0 10px; border:1px solid var(--bt-surface-border); border-radius:9px; color:var(--bt-color-text-control); background:var(--bt-surface-background-neutral); }
