@@ -1,0 +1,78 @@
+Group,Category,Nature
+Receitas,Lucros e prejuízos meses anteriores,inflow
+Receitas · Banco Itaú,Cartão de crédito,inflow
+Receitas · Banco Itaú,Ball Corporation,inflow
+Receitas · Banco Itaú,AGC Vidros,inflow
+Receitas · Banco Itaú,Johnson&Johnson,inflow
+Receitas · Banco Itaú,Eldorado do Brasil,inflow
+Receitas · Banco Itaú,Particular,inflow
+Receitas · Banco Itaú,Capital de Giro,inflow
+Receitas · Banco Itaú,Embraer,inflow
+Receitas · Banco Itaú,Tenaris Confab,inflow
+Receitas · Banco Itaú,Demais clientes,inflow
+Deduções,Simples Nacional - Betinhos,outflow
+Deduções,Simples Nacional - DePaula,outflow
+Deduções,Parcelamento de impostos (Betinhos e Depaula),outflow
+Deduções,Taxas,outflow
+Custos Fixos · Salário Operacional,Folha de pagamento da Betinhos,outflow
+Custos Fixos · Salário Operacional,Folha de pagamento da Depaula,outflow
+Custos Fixos · Salário Operacional,Adiantamento salarial da Betinhos,outflow
+Custos Fixos · Salário Operacional,Adiantamento salarial da Depaula,outflow
+Custos Fixos · Salário Operacional,Previsão e Férias - Betinhos,outflow
+Custos Fixos · Salário Operacional,Previsão e Férias - DePaula,outflow
+Custos Fixos · Salário Operacional,Rescisões,outflow
+Custos Fixos · Salário Operacional,Ação trabalhista,outflow
+Custos Fixos · Salário Operacional,FGTS Betinhos,outflow
+Custos Fixos · Salário Operacional,FGTS DePaula,outflow
+Custos Fixos · Custos Reembolsáveis,"INSS, DARF e IRRF da Betinhos",outflow
+Custos Fixos · Custos Reembolsáveis,"INSS, DARF e IRRF da Depaula",outflow
+Custos Fixos · Custos Reembolsáveis,Drogaria São Paulo,outflow
+Custos Fixos · Custos Reembolsáveis,Outros,outflow
+Custos Fixos · Benefícios,Plano de Saúde,outflow
+Custos Fixos · Benefícios,Cesta Básica - Betinho´s e DP,outflow
+Custos Fixos · Benefícios,Cartão de crédito (VISA Motoristas),outflow
+Custos Fixos · Benefícios,Alimentação dos colaboradores,outflow
+Custos Fixos · Veículos,Financiamento de veículos,outflow
+Custos Fixos · Veículos,Locação de carro,outflow
+Custos Fixos · Veículos,Vinac Consórcios,outflow
+Custos Fixos · Veículos,Investimentos,outflow
+Custos Variáveis · Veículos,Posto de combustível,outflow
+Custos Variáveis · Veículos,Pedágios e Estacionamentos - Sem Parar,outflow
+Custos Variáveis · Veículos,Seguro da frota,outflow
+Custos Variáveis · Veículos,Lava Rápidos,outflow
+Custos Variáveis · Veículos,Licenciamento,outflow
+Custos Variáveis · Veículos,Multas de trânsito,outflow
+Custos Variáveis · Veículos,Manutenção de veículos,outflow
+Custos Variáveis · Terceiros,Paulo Cesar,outflow
+Custos Variáveis · Terceiros,Délio Ruben Jr,outflow
+Custos Variáveis · Terceiros,Ismael Neto,outflow
+Custos Variáveis · Terceiros,Pedro Rodrigues,outflow
+Custos Variáveis · Terceiros,Gilberto Garcia,outflow
+Custos Variáveis · Terceiros,Eduardo Oliveira,outflow
+Custos Variáveis · Terceiros,Robson Santos,outflow
+Custos Variáveis · Terceiros,Fábio Honório,outflow
+Custos Variáveis · Terceiros,Pagamento de fornecedores (Avulsos),outflow
+Custos Variáveis · Terceiros,Empresas de transporte,outflow
+Custos Variáveis · Terceiros,"Hoteis, pousadas",outflow
+Custos Variáveis · Cartões de Crédito,Visa Citibank,outflow
+Custos Variáveis · Cartões de Crédito,American Express,outflow
+Despesas Administrativas · Salários,Deborah de Paula,outflow
+Despesas Administrativas · Salários,Junior de Paula,outflow
+Despesas Administrativas · Salários,Juliana Rodrigues,outflow
+Despesas Administrativas · Salários,Time administrativo extra,outflow
+Despesas Administrativas · Salários,Benefícios,outflow
+Despesas Administrativas · Office - Betinho´s,Água,outflow
+Despesas Administrativas · Office - Betinho´s,Luz,outflow
+Despesas Administrativas · Office - Betinho´s,Assessoria Jurídica,outflow
+Despesas Administrativas · Office - Betinho´s,Contabilidade,outflow
+Despesas Administrativas · Office - Betinho´s,Telefonia,outflow
+Despesas Administrativas · Office - Betinho´s,Manutenção Predial,outflow
+Despesas Administrativas · Office - Betinho´s,Aluguel,outflow
+Despesas Financeiras,Despesas de Juros,outflow
+Despesas Financeiras,Taxas Bancárias,outflow
+Despesas Financeiras,Outras despesas financeiras,outflow
+Pró-labore,Pró labore na conta Santander,outflow
+Pró-labore,"Despesas do proprietário (Casa, Saúde)",outflow
+Pró-labore,Gastos particulares do proprietário,outflow
+Pró-labore,Visa Citibank,outflow
+Pró-labore,Sem lançamento,outflow
