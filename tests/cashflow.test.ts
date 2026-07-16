@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseOfx, parseOfxDate } from '../src/lib/ofx';
 import { buildWeeks, signedAmount, suggestReconciliations, weeklyAmount } from '../src/lib/cashflow';
+import { buildOfxBatch } from '../src/lib/dataverse';
 import type { CashflowEntry } from '../src/types';
 
 const forecast: CashflowEntry = { id: 'forecast', description: 'Recebimento Grupo', category: 'Clientes', group: 'Operacional', amount: 1200, date: '2026-07-13', kind: 'forecast', nature: 'inflow', status: 'open', source: 'order' };
@@ -27,4 +28,13 @@ test('sugere somente conciliação 1:1 no mesmo sentido e até sete dias', () =>
   const result = suggestReconciliations([forecast, actual, secondActual]);
   assert.equal(result.length, 1);
   assert.equal(result[0].forecast.id, 'forecast');
+});
+
+test('monta change set OFX atômico no formato multipart aceito pelo Dataverse', () => {
+  const { batch, body } = buildOfxBatch('11111111-1111-1111-1111-111111111111', [actual], 'batch_test', 'changeset_test');
+  assert.equal(batch, 'batch_test');
+  assert.match(body, /Content-Type: multipart\/mixed; boundary="changeset_test"/);
+  assert.match(body, /Content-ID: 1/);
+  assert.match(body, /Content-Type: application\/json;type=entry/);
+  assert.match(body, /--changeset_test--\r\n--batch_test--\r\n$/);
 });

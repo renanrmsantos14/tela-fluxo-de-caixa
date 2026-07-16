@@ -110,17 +110,25 @@ async function uploadOriginalFile(context: RuntimeContext, importId: string, fil
   if (!response.ok) throw new Error(`Falha ao guardar OFX original (${response.status}).`);
 }
 
-async function saveBatch(context: RuntimeContext, importId: string, entries: CashflowEntry[]): Promise<void> {
-  const batch = `batch_${crypto.randomUUID().replaceAll('-', '')}`;
-  const changeSet = `changeset_${crypto.randomUUID().replaceAll('-', '')}`;
-  const lines = [`--${batch}`, `Content-Type: multipart/mixed;boundary=${changeSet}`, ''];
-  for (const entry of entries) {
-    lines.push(`--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary', '', `POST /api/data/v9.2/${entrySet} HTTP/1.1`, 'Content-Type: application/json', '', JSON.stringify({ ...payload(entry), cr40f_importacaoid: importId }), '');
+export function buildOfxBatch(importId: string, entries: CashflowEntry[], batch = `batch_${crypto.randomUUID().replaceAll('-', '')}`, changeSet = `changeset_${crypto.randomUUID().replaceAll('-', '')}`): { batch: string; body: string } {
+  const lines = [`--${batch}`, `Content-Type: multipart/mixed; boundary="${changeSet}"`, ''];
+  for (const [index, entry] of entries.entries()) {
+    lines.push(`--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary', `Content-ID: ${index + 1}`, '', `POST /api/data/v9.2/${entrySet} HTTP/1.1`, 'Content-Type: application/json;type=entry', '', JSON.stringify({ ...payload(entry), cr40f_importacaoid: importId }), '');
   }
-  lines.push(`--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary', '', `PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos(${importId}) HTTP/1.1`, 'Content-Type: application/json', '', JSON.stringify({ cr40f_status: 'imported' }), '', `--${changeSet}--`, `--${batch}--`, '');
-  const response = await fetch(`${context.clientUrl}/api/data/v9.2/$batch`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': `multipart/mixed;boundary=${batch}` }, body: lines.join('\r\n') });
+  lines.push(`--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary', `Content-ID: ${entries.length + 1}`, '', `PATCH /api/data/v9.2/cr40f_fluxocaixaimportacaos(${importId}) HTTP/1.1`, 'Content-Type: application/json;type=entry', '', JSON.stringify({ cr40f_status: 'imported' }), '', `--${changeSet}--`, `--${batch}--`, '');
+  return { batch, body: lines.join('\r\n') };
+}
+
+function batchErrorDetail(text: string): string {
+  try { const json = JSON.parse(text) as { error?: { message?: string } }; return json.error?.message ? ` Detalhe Dataverse: ${json.error.message}` : ''; }
+  catch { const match = text.match(/"message"\s*:\s*"([^"]+)"|<title>([^<]+)<\/title>/i); return match ? ` Detalhe Dataverse: ${match[1] ?? match[2]}` : ''; }
+}
+
+async function saveBatch(context: RuntimeContext, importId: string, entries: CashflowEntry[]): Promise<void> {
+  const request = buildOfxBatch(importId, entries);
+  const response = await fetch(`${context.clientUrl}/api/data/v9.2/$batch`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0', 'Content-Type': `multipart/mixed; boundary="${request.batch}"` }, body: request.body });
   const text = await response.text();
-  if (!response.ok || /HTTP\/1\.1 [45]\d\d/.test(text)) throw new Error('Dataverse rejeitou a importação OFX atômica. Nenhum lançamento foi confirmado.');
+  if (!response.ok || /HTTP\/1\.1 [45]\d\d/.test(text)) throw new Error(`Dataverse rejeitou a importação OFX atômica. Nenhum lançamento foi confirmado.${batchErrorDetail(text)}`);
 }
 
 export async function importOfxAtomically(context: RuntimeContext, result: OfxImportResult, account: string, file: File, entries: CashflowEntry[]): Promise<void> {
