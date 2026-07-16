@@ -17,7 +17,7 @@ import {
   saveRuleAndValidateAtomically, validateEntriesAtomically,
 } from './lib/dataverse';
 import { planOfxEntries } from './lib/import-planning';
-import { decodeOfxBytes, parseOfx } from './lib/ofx';
+import { decodeOfxBytes, findOfxAccount, ofxAccountDraft, parseOfx } from './lib/ofx';
 import { resolveRuntimeContext } from './lib/runtime';
 import {
   mockAccounts, mockAudit, mockCategories, mockCounterparties, mockEntries, mockRules,
@@ -49,8 +49,7 @@ function latestMonth(entries: CashflowEntry[]): string {
 }
 
 function accountMatches(account: FinanceReference | undefined, ofx: OfxImportResult | null): boolean {
-  if (!account || !ofx?.accountId) return false;
-  return account.identifier === ofx.accountId && (!ofx.bankId || !account.bank || account.bank === ofx.bankId);
+  return Boolean(account && ofx && findOfxAccount([account], ofx));
 }
 
 function useDialogFocus(open: boolean, close: () => void) {
@@ -109,6 +108,7 @@ function App() {
   const [ofxFile, setOfxFile] = useState<File | null>(null);
   const [importAccountId, setImportAccountId] = useState('');
   const [accountConfirmed, setAccountConfirmed] = useState(false);
+  const [showAccountCreator, setShowAccountCreator] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [mobile, setMobile] = useState(() => window.innerWidth < 820);
@@ -274,10 +274,50 @@ function App() {
     try {
       const result = await parseOfx(decodeOfxBytes(new Uint8Array(await file.arrayBuffer())));
       if (result.currency !== 'BRL') throw new Error('A V0 aceita apenas OFX em BRL.');
-      const matched = accounts.find((account) => accountMatches(account, result));
-      setOfx(result); setOfxFile(file); setImportAccountId(matched?.id ?? ''); setAccountConfirmed(Boolean(matched));
+      const matched = findOfxAccount(accounts, result);
+      setOfx(result);
+      setOfxFile(file);
+      setImportAccountId(matched?.id ?? '');
+      setAccountConfirmed(Boolean(matched));
+      setShowAccountCreator(!matched && Boolean(result.accountId));
     } catch (error) {
       flash(error instanceof Error ? error.message : 'OFX inválido.');
+    }
+  }
+
+  async function createAccountFromOfx(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ofx?.accountId) return flash('O OFX não informou o identificador da conta.');
+    const data = new FormData(event.currentTarget);
+    const name = String(data.get('name') ?? '').trim();
+    const bank = String(data.get('bank') ?? '').trim();
+    const identifier = String(data.get('identifier') ?? '').trim();
+    if (!name || !identifier) return flash('Informe o nome e o identificador da conta.');
+    if (findOfxAccount(accounts, { bankId: bank, accountId: identifier })) {
+      return flash('Esta conta já está cadastrada.');
+    }
+    try {
+      setBusy(true);
+      const id = await saveReference(context, financeSets.accounts, {
+        cr40f_name: name,
+        cr40f_banco: bank,
+        cr40f_identificador: identifier,
+      });
+      const created: FinanceReference = { id, name, bank, identifier };
+      setAccounts((current) => [...current, created]);
+      setImportAccountId(id);
+      setAccountConfirmed(accountMatches(created, ofx));
+      setShowAccountCreator(false);
+      try {
+        await audit(context, 'Conta criada pelo OFX', `${name}: BANKID ${bank || 'não informado'} · ACCTID ${identifier}.`);
+      } catch {
+        // O cadastro confirmado não deve ser apresentado como falha por indisponibilidade da auditoria.
+      }
+      flash('Conta criada e selecionada automaticamente.');
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Não foi possível criar a conta.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -450,7 +490,10 @@ function App() {
     finally { setBusy(false); }
   }
 
-  const closeModal = () => setModal(null);
+  const closeModal = () => {
+    setModal(null);
+    setShowAccountCreator(false);
+  };
   const closeDrawer = () => setSelected(null);
   const modalRef = useDialogFocus(Boolean(modal), closeModal);
   const drawerRef = useDialogFocus(Boolean(selected), closeDrawer);
@@ -516,10 +559,18 @@ function App() {
       {modal === 'ofx' && <div>
         {!ofx ? <label className="dropzone"><FileUp size={34} /><strong>Escolha um arquivo .ofx</strong><span>SGML 1.x ou XML 2.x · UTF-8 ou Windows-1252</span><input type="file" accept=".ofx" onChange={(event) => void readOfx(event)} /></label> : <>
           <div className="import-summary"><Banknote /><div><strong>{ofx.transactions.length} movimentações</strong><small>Conta OFX {ofx.bankId || '—'} · {ofx.accountId || '—'}</small></div></div>
-          <label>Conta cadastrada<select value={importAccountId} onChange={(event) => { setImportAccountId(event.target.value); setAccountConfirmed(accountMatches(accounts.find((item) => item.id === event.target.value), ofx)); }}><option value="">Selecione</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          {!accountMatches(accounts.find((item) => item.id === importAccountId), ofx) && <label className="warning-confirm check-label"><input type="checkbox" checked={accountConfirmed} onChange={(event) => setAccountConfirmed(event.target.checked)} />Confirmo que este OFX pertence à conta selecionada.</label>}
+          {showAccountCreator ? <form className="account-suggestion" onSubmit={(event) => void createAccountFromOfx(event)}>
+            <div className="account-suggestion-heading"><span><Landmark size={18} /></span><div><strong>Conta ainda não cadastrada</strong><small>Encontramos os dados bancários no OFX. Revise e confirme para criar.</small></div></div>
+            <label>Nome da conta<input name="name" defaultValue={ofxAccountDraft(ofx).name} required /></label>
+            <div className="form-row"><label>BANKID<input name="bank" defaultValue={ofxAccountDraft(ofx).bank} /></label><label>ACCTID<input name="identifier" defaultValue={ofxAccountDraft(ofx).identifier} required /></label></div>
+            <div className="account-suggestion-actions"><button type="button" className="button ghost" onClick={() => setShowAccountCreator(false)}>Escolher conta existente</button><button className="button primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Plus size={16} />}Criar e usar esta conta</button></div>
+          </form> : <>
+            {accountMatches(accounts.find((item) => item.id === importAccountId), ofx) && <div className="account-detected"><CheckCircle2 size={17} /><span><strong>Conta identificada automaticamente</strong><small>{accounts.find((item) => item.id === importAccountId)?.name}</small></span></div>}
+            <label>Conta cadastrada<select value={importAccountId} onChange={(event) => { setImportAccountId(event.target.value); setAccountConfirmed(accountMatches(accounts.find((item) => item.id === event.target.value), ofx)); }}><option value="">Selecione</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            {!accountMatches(accounts.find((item) => item.id === importAccountId), ofx) && <><label className="warning-confirm check-label"><input type="checkbox" checked={accountConfirmed} onChange={(event) => setAccountConfirmed(event.target.checked)} />Confirmo que este OFX pertence à conta selecionada.</label>{ofx.accountId && <button type="button" className="button ghost create-account-link" onClick={() => setShowAccountCreator(true)}><Plus size={15} />Criar conta com os dados do OFX</button>}</>}
+          </>}
         </>}
-        <footer><button className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={!ofx || !importAccountId || busy} onClick={() => void confirmOfx()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}Importar</button></footer>
+        {!showAccountCreator && <footer><button className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={!ofx || !importAccountId || busy} onClick={() => void confirmOfx()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Upload size={16} />}Importar</button></footer>}
       </div>}
       {modal === 'category-xlsx' && <div><p className="form-note">A primeira linha deve conter exatamente: <strong>Grupo</strong>, <strong>Categoria</strong> e <strong>Natureza</strong>. Uma linha inválida rejeita o arquivo inteiro.</p><label className="dropzone"><FileSpreadsheet size={34} /><strong>Escolha a planilha .xlsx</strong><span>Upsert por Grupo + Categoria</span><input type="file" accept=".xlsx" onChange={(event) => void importCategoryFile(event)} /></label></div>}
       {modal === 'category-editor' && <form onSubmit={(event) => void saveCategoryForm(event)}>

@@ -1,4 +1,33 @@
-import type { OfxImportResult, OfxTransaction } from '../types';
+import type { FinanceReference, OfxImportResult, OfxTransaction } from '../types';
+
+function normalizedAccountCode(value: string | undefined): string {
+  return (value ?? '').trim().toLocaleUpperCase('pt-BR');
+}
+
+export function findOfxAccount(
+  accounts: FinanceReference[],
+  ofx: Pick<OfxImportResult, 'accountId' | 'bankId'>,
+): FinanceReference | undefined {
+  const accountId = normalizedAccountCode(ofx.accountId);
+  const bankId = normalizedAccountCode(ofx.bankId);
+  if (!accountId) return undefined;
+  return accounts.find((account) =>
+    normalizedAccountCode(account.identifier) === accountId
+    && (!bankId || normalizedAccountCode(account.bank) === bankId)
+  );
+}
+
+export function ofxAccountDraft(
+  ofx: Pick<OfxImportResult, 'accountId' | 'bankId'>,
+): { name: string; bank: string; identifier: string } {
+  const bank = (ofx.bankId ?? '').trim();
+  const identifier = (ofx.accountId ?? '').trim();
+  return {
+    name: [bank && `Banco ${bank}`, identifier && `Conta ${identifier}`].filter(Boolean).join(' · '),
+    bank,
+    identifier,
+  };
+}
 
 function tag(content: string, name: string): string | undefined {
   const closed = new RegExp(`<${name}[^>]*>\\s*([^<\\r\\n]+)\\s*</${name}>`, 'i').exec(content);

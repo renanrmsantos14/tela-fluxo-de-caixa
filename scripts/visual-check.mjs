@@ -63,6 +63,18 @@ try {
   await importButton.focus();
   await importButton.click();
   await page.getByRole('dialog', { name: 'Importar OFX' }).waitFor();
+  await page.locator('input[type="file"][accept=".ofx"]').setInputFiles({
+    name: 'conta-nova.ofx',
+    mimeType: 'application/x-ofx',
+    buffer: Buffer.from('<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>341<ACCTID>VISUAL-001<BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260715120000[-3]<TRNAMT>-10<FITID>visual-1<NAME>TESTE</STMTTRN></BANKTRANLIST></OFX>'),
+  });
+  await page.getByText('Conta ainda não cadastrada').waitFor();
+  if (await page.locator('input[name="bank"]').inputValue() !== '341') throw new Error('Popup não preencheu BANKID.');
+  if (await page.locator('input[name="identifier"]').inputValue() !== 'VISUAL-001') throw new Error('Popup não preencheu ACCTID.');
+  const accountPopupAxe = await new AxeBuilder({ page }).analyze();
+  const accountPopupBlocking = accountPopupAxe.violations.filter((violation) => violation.impact === 'serious' || violation.impact === 'critical');
+  if (accountPopupBlocking.length) throw new Error(`Axe popup de conta: ${accountPopupBlocking.map((item) => `${item.id}: ${item.nodes.map((node) => node.target.join(' ')).join(' | ')}`).join(', ')}`);
+  await page.screenshot({ path: fileURLToPath(new URL('ofx-conta-nova-1440.png', output)) });
   await page.keyboard.press('Escape');
   if (!(await importButton.evaluate((element) => element === document.activeElement))) throw new Error('O modal OFX não restaurou o foco no acionador.');
   await page.getByRole('button', { name: 'Categorias DRE' }).click();

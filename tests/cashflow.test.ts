@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildOfxBatch, buildReverseBatch } from '../src/lib/dataverse';
-import { decodeOfxBytes, parseOfx, parseOfxDate, transactionKey } from '../src/lib/ofx';
+import {
+  decodeOfxBytes, findOfxAccount, ofxAccountDraft, parseOfx, parseOfxDate, transactionKey,
+} from '../src/lib/ofx';
 import type { CashflowEntry } from '../src/types';
 
 const actual: CashflowEntry = {
@@ -45,6 +47,22 @@ test('preserva NAME, MEMO, TRNTYPE, CHECKNUM e REFNUM', async () => {
   assert.equal(result.transactions[0].type, 'DEBIT');
   assert.equal(result.transactions[0].checkNumber, 'check-1');
   assert.equal(result.transactions[0].referenceNumber, 'ref-1');
+});
+
+test('identifica automaticamente a conta por BANKID e ACCTID', () => {
+  const accounts = [
+    { id: 'wrong-bank', name: 'Outra conta', bank: '033', identifier: '4521' },
+    { id: 'matched', name: 'Itaú principal', bank: '341', identifier: '4521' },
+  ];
+  assert.equal(findOfxAccount(accounts, { bankId: '341', accountId: '4521' })?.id, 'matched');
+});
+
+test('sugere cadastro de conta preenchido com os dados do OFX', () => {
+  assert.deepEqual(ofxAccountDraft({ bankId: '341', accountId: '0004521' }), {
+    name: 'Banco 341 · Conta 0004521',
+    bank: '341',
+    identifier: '0004521',
+  });
 });
 
 test('monta importação OFX atômica aceita pelo Dataverse', () => {
