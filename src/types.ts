@@ -42,6 +42,8 @@ export interface FinanceReference {
   date?: string;
   expression?: string;
   recipients?: string;
+  action?: string;
+  detail?: string;
   [key: string]: unknown;
 }
 

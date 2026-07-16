@@ -5,3 +5,5 @@ graphify-out/
 **/graphify-out/
 .superpowers/
 .npm-cache/
+.playwright-cli/
+output/playwright/
