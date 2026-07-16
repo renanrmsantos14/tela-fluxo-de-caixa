@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deleteReference, loadFavorecidos, patchEntry, saveClassificationRule } from '../src/lib/dataverse';
+import { deleteReference, importOfxAtomically, loadFavorecidos, patchEntry, saveClassificationRule } from '../src/lib/dataverse';
 import type { CashflowEntry, RuntimeContext } from '../src/types';
 
 test('PATCH mantém Content-Type JSON ao adicionar If-Match', async () => {
@@ -84,4 +84,40 @@ test('edição de regra limpa conta e favorecido opcionais', async () => {
   });
   assert.match(body, /"cr40f_ContaRef@odata.bind":null/);
   assert.match(body, /"cr40f_TerceiroFavorecidoRef@odata.bind":null/);
+});
+
+test('reimportação ignora lote e lançamentos já revertidos', async () => {
+  const calls: Array<{ url: string; options: RequestInit }> = [];
+  Object.assign(globalThis, {
+    fetch: async (url: string, options: RequestInit = {}) => {
+      calls.push({ url, options });
+      if (options.method === 'POST' && url.endsWith('/cr40f_fluxocaixaimportacaos')) {
+        return new Response(null, { status: 204, headers: { 'OData-EntityId': 'https://org.crm.dynamics.com/api/data/v9.2/cr40f_fluxocaixaimportacaos(11111111-1111-1111-1111-111111111111)' } });
+      }
+      if (url.includes("cr40f_fluxocaixaimportacaos?$select=cr40f_fluxocaixaimportacaoid&$filter=") && url.includes("cr40f_status%20eq%20'reversed'")) {
+        return Response.json({ value: [{ cr40f_fluxocaixaimportacaoid: 'legacy-import' }] });
+      }
+      if (url.includes("cr40f_fluxocaixalancamentos?$select=cr40f_fluxocaixalancamentoid&$filter=") && url.includes("cr40f_status%20eq%20'reversed'")) {
+        return Response.json({ value: [{ cr40f_fluxocaixalancamentoid: 'legacy-entry' }] });
+      }
+      return Response.json({ value: [] });
+    },
+  });
+
+  await importOfxAtomically(
+    { mode: 'direct', clientUrl: 'https://org.crm.dynamics.com' },
+    { bankId: '341', accountId: '123', currency: 'BRL', fingerprint: 'fingerprint', transactions: [] },
+    'Conta teste',
+    '22222222-2222-2222-2222-222222222222',
+    { name: 'teste.ofx', arrayBuffer: async () => new ArrayBuffer(0) } as File,
+    [{
+      id: 'entry-1', description: 'Teste', category: '', group: '', amount: 10, date: '2026-07-16',
+      kind: 'actual', nature: 'outflow', status: 'pending', source: 'ofx', transactionKey: 'transaction-key',
+    }],
+  );
+
+  assert.match(calls[0].url, /cr40f_status%20ne%20'reversed'/);
+  assert.match(calls[1].url, /cr40f_status%20ne%20'reversed'/);
+  assert.equal(calls.find((call) => call.url.endsWith('/cr40f_fluxocaixaimportacaos(legacy-import)'))?.options.body, '{"cr40f_fingerprint":null}');
+  assert.equal(calls.find((call) => call.url.endsWith('/cr40f_fluxocaixalancamentos(legacy-entry)'))?.options.body, '{"cr40f_chavetransacao":null}');
 });

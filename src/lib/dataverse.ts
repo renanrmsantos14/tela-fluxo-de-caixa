@@ -445,31 +445,53 @@ export function buildReverseBatch(
     lines.push(
       `--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary',
       `Content-ID: ${index + 1}`, '', `PATCH /api/data/v9.2/${entrySet}(${id}) HTTP/1.1`,
-      'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed' }), '',
+      'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed', cr40f_chavetransacao: null }), '',
     );
   });
   lines.push(
     `--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary',
     `Content-ID: ${entryIds.length + 1}`, '',
     `PATCH /api/data/v9.2/${financeSets.imports}(${importId}) HTTP/1.1`,
-    'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed' }), '',
+    'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed', cr40f_fingerprint: null }), '',
     `--${changeSet}--`, `--${batch}--`, '',
   );
   return { batch, body: lines.join('\r\n') };
 }
 
 async function importExists(context: RuntimeContext, fingerprint: string): Promise<boolean> {
-  const query = `?$select=cr40f_fluxocaixaimportacaoid&$top=1&$filter=cr40f_fingerprint eq '${odata(fingerprint)}'`;
+  const filter = `cr40f_fingerprint eq '${odata(fingerprint)}' and cr40f_status ne 'reversed'`;
+  const query = `?$select=cr40f_fluxocaixaimportacaoid&$top=1&$filter=${encodeURIComponent(filter)}`;
   return (await request(context, `${financeSets.imports}${query}`).then((response) => response.json()) as { value: unknown[] }).value.length > 0;
 }
 
 async function transactionExists(context: RuntimeContext, keys: string[]): Promise<boolean> {
   for (let index = 0; index < keys.length; index += 20) {
-    const filter = keys.slice(index, index + 20).map((key) => `cr40f_chavetransacao eq '${odata(key)}'`).join(' or ');
+    const keysFilter = keys.slice(index, index + 20).map((key) => `cr40f_chavetransacao eq '${odata(key)}'`).join(' or ');
+    const filter = `(${keysFilter}) and cr40f_status ne 'reversed'`;
     const query = `?$select=cr40f_fluxocaixalancamentoid&$top=1&$filter=${encodeURIComponent(filter)}`;
     if ((await request(context, `${entrySet}${query}`).then((response) => response.json()) as { value: unknown[] }).value.length) return true;
   }
   return false;
+}
+
+async function releaseReversedImportFingerprint(context: RuntimeContext, fingerprint: string): Promise<void> {
+  const filter = `cr40f_fingerprint eq '${odata(fingerprint)}' and cr40f_status eq 'reversed'`;
+  const query = `?$select=cr40f_fluxocaixaimportacaoid&$filter=${encodeURIComponent(filter)}`;
+  const result = await request(context, `${financeSets.imports}${query}`).then((response) => response.json()) as { value: Array<{ cr40f_fluxocaixaimportacaoid: string }> };
+  await Promise.all(result.value.map((item) => request(context, `${financeSets.imports}(${item.cr40f_fluxocaixaimportacaoid})`, {
+    method: 'PATCH', headers: { 'If-Match': '*' }, body: JSON.stringify({ cr40f_fingerprint: null }),
+  })));
+}
+
+async function releaseReversedTransactionKeys(context: RuntimeContext, keys: string[]): Promise<void> {
+  for (let index = 0; index < keys.length; index += 20) {
+    const keysFilter = keys.slice(index, index + 20).map((key) => `cr40f_chavetransacao eq '${odata(key)}'`).join(' or ');
+    const query = `?$select=cr40f_fluxocaixalancamentoid&$filter=${encodeURIComponent(`(${keysFilter}) and cr40f_status eq 'reversed'`)}`;
+    const result = await request(context, `${entrySet}${query}`).then((response) => response.json()) as { value: Array<{ cr40f_fluxocaixalancamentoid: string }> };
+    await Promise.all(result.value.map((item) => request(context, `${entrySet}(${item.cr40f_fluxocaixalancamentoid})`, {
+      method: 'PATCH', headers: { 'If-Match': '*' }, body: JSON.stringify({ cr40f_chavetransacao: null }),
+    })));
+  }
 }
 
 export async function importOfxAtomically(
@@ -484,6 +506,8 @@ export async function importOfxAtomically(
   if (await importExists(context, result.fingerprint)) throw new Error('Este arquivo OFX já foi importado.');
   const keys = entries.map((entry) => entry.transactionKey).filter((value): value is string => Boolean(value));
   if (await transactionExists(context, keys)) throw new Error('Uma ou mais transações deste OFX já existem nesta conta.');
+  await releaseReversedImportFingerprint(context, result.fingerprint);
+  await releaseReversedTransactionKeys(context, keys);
   const importId = await saveReference(context, financeSets.imports, {
     cr40f_name: `OFX ${file.name}`,
     cr40f_fingerprint: result.fingerprint,
