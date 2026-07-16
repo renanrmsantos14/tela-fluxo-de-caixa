@@ -76,6 +76,7 @@ test('monta reversão do lote completo em um changeset', () => {
   const request = buildReverseBatch('22222222-2222-2222-2222-222222222222', ['11111111-1111-1111-1111-111111111111'], [], 'batch_reverse', 'changeset_reverse');
   assert.match(request.body, /"cr40f_status":"reversed"/);
   assert.match(request.body, /"cr40f_chavetransacao":null/);
+  assert.match(request.body, /"cr40f_RegraRef@odata.bind":null/);
   assert.match(request.body, /"cr40f_fingerprint":null/);
   assert.match(request.body, /cr40f_fluxocaixaimportacaos\(22222222-2222-2222-2222-222222222222\)/);
   assert.match(request.body, /--changeset_reverse--\r\n--batch_reverse--\r\n$/);

@@ -410,7 +410,7 @@ export function buildReverseBatch(
     lines.push(
       `--${changeSet}`, 'Content-Type: application/http', 'Content-Transfer-Encoding: binary',
       `Content-ID: ${index + 1}`, '', `PATCH /api/data/v9.2/${entrySet}(${id}) HTTP/1.1`,
-      'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed', cr40f_chavetransacao: null }), '',
+      'Content-Type: application/json; charset=utf-8', '', JSON.stringify({ cr40f_status: 'reversed', cr40f_chavetransacao: null, 'cr40f_RegraRef@odata.bind': null }), '',
     );
   });
   lines.push(

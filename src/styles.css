@@ -83,9 +83,16 @@ button,input,select { font:inherit; } button { cursor:pointer; } button:disabled
 .rule-list strong,.rule-list small { display:block; }
 .rule-list small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
 .rule-list article.inactive { opacity:.62; }
-.import-row { min-height:68px; display:flex; justify-content:space-between; align-items:center; gap:16px; border-bottom:1px solid var(--bt-surface-border); }
-.import-row strong,.import-row small { display:block; }
-.import-row small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
+.recipient-list,.import-list { margin-top:18px; border-top:1px solid var(--bt-surface-border); }
+.recipient-list article { min-height:66px; display:grid; grid-template-columns:8px minmax(180px,1fr) minmax(200px,.9fr) auto; gap:12px; align-items:center; border-bottom:1px solid var(--bt-surface-border); }
+.recipient-list strong,.recipient-list small,.import-row strong,.import-row small { display:block; }
+.recipient-list small,.import-row small { margin-top:3px; color:var(--bt-color-text-secondary); font-size:10px; }
+.recipient-state,.import-state { width:8px; height:8px; border-radius:50%; background:var(--bt-color-success); }
+.import-row { min-height:76px; display:grid; grid-template-columns:8px minmax(220px,1fr) auto auto; gap:12px; align-items:center; border-bottom:1px solid var(--bt-surface-border); }
+.import-row.reversed { background:var(--bt-color-danger-soft); }
+.import-row.reversed .import-state { background:var(--bt-color-danger); box-shadow:0 0 0 4px rgba(176,48,48,.12); }
+.reversal-note { display:flex!important; align-items:center; gap:5px; color:var(--bt-color-danger)!important; font-weight:700; }
+.reversal-action { color:var(--bt-color-text-secondary); font-size:11px; font-weight:700; }
 .drawer-edit label small { color:var(--bt-color-text-secondary); font-size:10px; font-weight:500; line-height:1.45; }
 .status-line.suggested { color:var(--bt-color-action); }
 .status-line.validated { color:var(--bt-color-success); }
@@ -135,7 +142,7 @@ button,input,select { font:inherit; } button { cursor:pointer; } button:disabled
   .queue-filters label { min-width:260px; }
   .closing-grid { grid-template-columns:1fr; }
   .shared-party-grid { grid-template-columns:1fr; }
-  .rule-list article { min-width:760px; }
+  .rule-list article,.recipient-list article,.import-row { min-width:760px; }
   .account-suggestion-actions { align-items:stretch; flex-direction:column-reverse; }
 }
 
@@ -192,7 +199,7 @@ input,select,.catalog-search,.queue-filters label,.dropzone {
 .metric:nth-child(3) strong { animation-delay:40ms; }
 .metric:nth-child(4) strong { animation-delay:60ms; }
 
-.attention-list button,.queue-row,.category-group article,.rule-list article,
+.attention-list button,.queue-row,.category-group article,.rule-list article,.recipient-list article,
 .shared-party-grid article,.reference-row,.import-row,.audit-list article,.breakdown-list > div {
   transition:
     background-color 150ms ease,
@@ -205,7 +212,7 @@ input,select,.catalog-search,.queue-filters label,.dropzone {
 }
 .rule-list article.inactive { filter:saturate(.76); }
 
-.view-content .metric,.view-content .category-group,.view-content .rule-list article,
+.view-content .metric,.view-content .category-group,.view-content .rule-list article,.view-content .recipient-list article,
 .view-content .queue-row,.view-content .shared-party-grid article,.view-content .reference-row,
 .view-content .import-row,.view-content .audit-list article {
   animation:list-item-in 200ms var(--ease-out-strong) both;
@@ -260,7 +267,7 @@ input,select,.catalog-search,.queue-filters label,.dropzone {
 @media (hover:hover) and (pointer:fine) {
   .button:not(:disabled):hover svg:first-child,.icon-button:not(:disabled):hover svg { transform:scale(1.06); }
   .attention-list button:hover,.queue-row:hover,.category-group article:hover,.rule-list article:hover,
-  .shared-party-grid article:hover,.reference-row:hover,.import-row:hover,.audit-list article:hover {
+  .shared-party-grid article:hover,.reference-row:hover,.import-row:not(.reversed):hover,.audit-list article:hover {
     background:var(--bt-surface-background-interactive);
   }
   .attention-list button:hover svg:last-child,.queue-row:hover .icon-button svg { transform:translateX(2px); }
@@ -296,8 +303,8 @@ input,select,.catalog-search,.queue-filters label,.dropzone {
 
 @media (prefers-reduced-motion:reduce) {
   .view-content,.metric strong,.empty,.form-error,.toast-message,
-  .view-content .metric,.view-content .category-group,.view-content .rule-list article,
-  .view-content .queue-row,.view-content .shared-party-grid article,.view-content .reference-row,
+  .view-content .metric,.view-content .category-group,.view-content .rule-list article,.view-content .recipient-list article,
+.view-content .queue-row,.view-content .shared-party-grid article,.view-content .reference-row,
   .view-content .import-row,.view-content .audit-list article,.category-group[open] > div {
     animation:none!important;
     filter:none!important;
