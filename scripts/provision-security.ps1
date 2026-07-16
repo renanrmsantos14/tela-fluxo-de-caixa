@@ -70,10 +70,6 @@ foreach ($table in $tables) {
     $privileges += @{Depth='Global';PrivilegeId=[string]$privilege.PrivilegeId;BusinessUnitId=$businessUnitId;PrivilegeName=[string]$privilege.Name}
   }
 }
-$favorecidoMetadata = Request 'GET' "EntityDefinitions(LogicalName='cr40f_terceirofavorecido')?`$select=LogicalName,Privileges"
-$favorecidoRead = @($favorecidoMetadata.Privileges | Where-Object { [string]$_.PrivilegeType -eq 'Read' })
-if ($favorecidoRead.Count -ne 1 -or -not $favorecidoRead[0].CanBeGlobal) { throw 'Privilegio global de leitura do Terceiro Favorecido nao encontrado.' }
-$privileges += @{Depth='Global';PrivilegeId=[string]$favorecidoRead[0].PrivilegeId;BusinessUnitId=$businessUnitId;PrivilegeName=[string]$favorecidoRead[0].Name}
 Step "apply $($privileges.Count) table privileges"
 Request 'POST' "roles($roleId)/Microsoft.Dynamics.CRM.AddPrivilegesRole" @{Privileges=$privileges} | Out-Null
 

@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Usar `cr40f_terceirofavorecido` como fonte única de destinatários e permitir
+Usar `cr40f_fluxocaixacontraparte` como fonte própria de destinatários e permitir
 CRUD completo de categorias e regras no módulo de fechamento bancário.
 
 ## Alterações
@@ -12,7 +12,7 @@ CRUD completo de categorias e regras no módulo de fechamento bancário.
   - gravar lookups para favorecido unificado;
   - adicionar exclusão de registros e CRUD de regras.
 - `[MODIFY] scripts/provision-dataverse.ps1`
-  - criar lookups de lançamentos e regras para `cr40f_terceirofavorecido`.
+  - criar lookups de lançamentos e regras para `cr40f_fluxocaixacontraparte`.
 - `[MODIFY] src/main.tsx`
   - lista hierárquica Grupo → Categoria;
   - formulários de criação/edição e exclusão protegida;

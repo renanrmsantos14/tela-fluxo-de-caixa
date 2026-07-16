@@ -64,7 +64,7 @@ $tables = @(
   @{Logical='cr40f_fluxocaixaconta';Set='cr40f_fluxocaixacontas';Id='cr40f_fluxocaixacontaid';Text=@('cr40f_name','cr40f_banco','cr40f_identificador')},
   @{Logical='cr40f_fluxocaixacategoria';Set='cr40f_fluxocaixacategorias';Id='cr40f_fluxocaixacategoriaid';Text=@('cr40f_name','cr40f_grupo','cr40f_natureza')},
   @{Logical='cr40f_fluxocaixarecorrencia';Set='cr40f_fluxocaixarecorrencias';Id='cr40f_fluxocaixarecorrenciaid';Text=@('cr40f_name','cr40f_categoria','cr40f_natureza','cr40f_frequencia','cr40f_ajustevencimento')},
-  @{Logical='cr40f_fluxocaixacontraparte';Set='cr40f_fluxocaixacontrapartes';Id='cr40f_fluxocaixacontraparteid';Text=@('cr40f_name','cr40f_documento')},
+  @{Logical='cr40f_fluxocaixacontraparte';Set='cr40f_fluxocaixacontrapartes';Id='cr40f_fluxocaixacontraparteid';Text=@('cr40f_name','cr40f_tipo','cr40f_documento','cr40f_chavepix','cr40f_email','cr40f_telefone','cr40f_observacao')},
   @{Logical='cr40f_fluxocaixaregra';Set='cr40f_fluxocaixaregras';Id='cr40f_fluxocaixaregraid';Text=@('cr40f_name','cr40f_expressao','cr40f_categoria')},
   @{Logical='cr40f_fluxocaixaferiado';Set='cr40f_fluxocaixaferiados';Id='cr40f_fluxocaixaferiadoid';Text=@('cr40f_name')},
   @{Logical='cr40f_fluxocaixaconfiguracao';Set='cr40f_fluxocaixaconfiguracaos';Id='cr40f_fluxocaixaconfiguracaoid';Text=@('cr40f_name','cr40f_entidadeop','cr40f_entitysetop','cr40f_campoidop','cr40f_camponomeop','cr40f_campovalorop','cr40f_campodataop','cr40f_campostatusop','cr40f_valorativoop','cr40f_categoriaop','cr40f_campocontraparteop','cr40f_destinatariosalerta')},

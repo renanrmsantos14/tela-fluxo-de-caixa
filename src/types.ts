@@ -46,6 +46,10 @@ export interface FinanceReference {
   bank?: string;
   identifier?: string;
   document?: string;
+  type?: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
   amount?: number;
   category?: string;
   categoryId?: string;

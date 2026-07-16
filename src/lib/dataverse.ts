@@ -8,13 +8,10 @@ import type {
 import type { ImportedCategory } from './category-import';
 
 const entrySet = 'cr40f_fluxocaixalancamentos';
-const favorecidoLogicalName = 'cr40f_terceirofavorecido';
-const favorecidoSet = 'cr40f_terceirofavorecidos';
-
 export const financeSets = {
   accounts: 'cr40f_fluxocaixacontas',
   categories: 'cr40f_fluxocaixacategorias',
-  counterparties: favorecidoSet,
+  counterparties: 'cr40f_fluxocaixacontrapartes',
   rules: 'cr40f_fluxocaixaregras',
   events: 'cr40f_fluxocaixaeventos',
   imports: 'cr40f_fluxocaixaimportacaos',
@@ -23,7 +20,7 @@ export const financeSets = {
 const primaryIds: Record<string, string> = {
   [financeSets.accounts]: 'cr40f_fluxocaixacontaid',
   [financeSets.categories]: 'cr40f_fluxocaixacategoriaid',
-  [financeSets.counterparties]: 'cr40f_terceirofavorecidoid',
+  [financeSets.counterparties]: 'cr40f_fluxocaixacontraparteid',
   [financeSets.rules]: 'cr40f_fluxocaixaregraid',
   [financeSets.events]: 'cr40f_fluxocaixaeventoid',
   [financeSets.imports]: 'cr40f_fluxocaixaimportacaoid',
@@ -60,7 +57,7 @@ function entryPayload(entry: CashflowEntry): Record<string, unknown> {
   };
   if (entry.accountId) body['cr40f_ContaRef@odata.bind'] = `/cr40f_fluxocaixacontas(${entry.accountId})`;
   if (entry.categoryId) body['cr40f_CategoriaRef@odata.bind'] = `/cr40f_fluxocaixacategorias(${entry.categoryId})`;
-  if (entry.counterpartyId) body['cr40f_TerceiroFavorecidoRef@odata.bind'] = `/${favorecidoSet}(${entry.counterpartyId})`;
+  if (entry.counterpartyId) body['cr40f_ContraparteRef@odata.bind'] = `/${financeSets.counterparties}(${entry.counterpartyId})`;
   if (entry.importId) body['cr40f_ImportacaoRef@odata.bind'] = `/cr40f_fluxocaixaimportacaos(${entry.importId})`;
   if (entry.ruleId) body['cr40f_RegraRef@odata.bind'] = `/cr40f_fluxocaixaregras(${entry.ruleId})`;
   return body;
@@ -122,10 +119,14 @@ export async function listReferences(context: RuntimeContext, setName: string, s
     bank: record.cr40f_banco as string | undefined,
     identifier: record.cr40f_identificador as string | undefined,
     document: record.cr40f_documento as string | undefined,
+    type: record.cr40f_tipo as string | undefined,
+    email: record.cr40f_email as string | undefined,
+    phone: record.cr40f_telefone as string | undefined,
+    notes: record.cr40f_observacao as string | undefined,
     category: record.cr40f_categoria as string | undefined,
     categoryId: record._cr40f_categoriaref_value as string | undefined,
     accountId: record._cr40f_contaref_value as string | undefined,
-    counterpartyId: (record._cr40f_terceirofavorecidoref_value ?? record._cr40f_contraparteref_value) as string | undefined,
+    counterpartyId: record._cr40f_contraparteref_value as string | undefined,
     expression: record.cr40f_expressao as string | undefined,
     action: record.cr40f_acao as string | undefined,
     detail: record.cr40f_detalhe as string | undefined,
@@ -160,44 +161,8 @@ export async function deleteReference(context: RuntimeContext, setName: string, 
   await request(context, `${setName}(${id})`, { method: 'DELETE', headers: { 'If-Match': '*' } });
 }
 
-function metadataLabel(value: unknown): string {
-  return String((value as { UserLocalizedLabel?: { Label?: string } } | undefined)?.UserLocalizedLabel?.Label ?? '');
-}
-
-export async function loadFavorecidos(context: RuntimeContext): Promise<FinanceReference[]> {
-  if (context.mode === 'mock') return [];
-  const entity = await request(
-    context,
-    `EntityDefinitions(LogicalName='${favorecidoLogicalName}')?$select=EntitySetName,PrimaryIdAttribute,PrimaryNameAttribute`,
-  ).then((response) => response.json()) as {
-    EntitySetName: string;
-    PrimaryIdAttribute: string;
-    PrimaryNameAttribute: string;
-  };
-  const statusMetadata = await request(
-    context,
-    `EntityDefinitions(LogicalName='${favorecidoLogicalName}')/Attributes(LogicalName='cr40f_status')/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$select=LogicalName&$expand=OptionSet`,
-  ).then((response) => response.json()) as { OptionSet?: { Options?: Array<{ Value: number; Label?: unknown }> } };
-  const active = (statusMetadata.OptionSet?.Options ?? []).find((option) =>
-    /^(ativo|active)$/i.test(metadataLabel(option.Label).normalize('NFD').replace(/\p{Diacritic}/gu, ''))
-  );
-  if (!active) throw new Error('Metadata de Terceiro Favorecido sem opção Ativo.');
-  const fields = [
-    entity.PrimaryIdAttribute, entity.PrimaryNameAttribute, 'cr40f_nomerazaosocial',
-    'cr40f_cpfcnpj', 'cr40f_chavepix', 'cr40f_email', 'cr40f_telefone', 'cr40f_status',
-  ];
-  const filter = encodeURIComponent(`cr40f_status eq ${active.Value}`);
-  const path = `${entity.EntitySetName}?$select=${fields.join(',')}&$filter=${filter}&$orderby=cr40f_nomerazaosocial asc`;
-  const rows = await request(context, path).then((response) => response.json()) as { value: Record<string, unknown>[] };
-  return rows.value.map((row) => ({
-    id: String(row[entity.PrimaryIdAttribute]),
-    name: String(row.cr40f_nomerazaosocial ?? row[entity.PrimaryNameAttribute] ?? 'Sem nome'),
-    document: String(row.cr40f_cpfcnpj ?? ''),
-    identifier: String(row.cr40f_chavepix ?? ''),
-    email: String(row.cr40f_email ?? ''),
-    phone: String(row.cr40f_telefone ?? ''),
-    active: true,
-  }));
+export async function loadDestinatarios(context: RuntimeContext): Promise<FinanceReference[]> {
+  return listReferences(context, financeSets.counterparties, 'cr40f_fluxocaixacontraparteid,cr40f_name,cr40f_tipo,cr40f_documento,cr40f_chavepix,cr40f_email,cr40f_telefone,cr40f_observacao');
 }
 
 export async function patchEntry(context: RuntimeContext, entry: CashflowEntry, changes: Partial<CashflowEntry>): Promise<void> {
@@ -227,7 +192,7 @@ export async function loadEntries(context: RuntimeContext): Promise<CashflowEntr
     'cr40f_descricaooriginal', 'cr40f_dataoriginal', 'cr40f_nameoriginal',
     'cr40f_memooriginal', 'cr40f_tipoofx', 'cr40f_checknum', 'cr40f_refnum',
     'cr40f_textonormalizado', 'cr40f_conflitoregra', 'cr40f_datavalidacao',
-    '_cr40f_contaref_value', '_cr40f_categoriaref_value', '_cr40f_terceirofavorecidoref_value', '_cr40f_contraparteref_value',
+    '_cr40f_contaref_value', '_cr40f_categoriaref_value', '_cr40f_contraparteref_value',
     '_cr40f_importacaoref_value', '_cr40f_regraref_value',
   ];
   const filter = encodeURIComponent("cr40f_origem eq 'ofx'");
@@ -254,7 +219,7 @@ export async function loadEntries(context: RuntimeContext): Promise<CashflowEntr
       account: record.cr40f_conta as string | undefined,
       accountId: record._cr40f_contaref_value as string | undefined,
       counterparty: record.cr40f_contraparte as string | undefined,
-      counterpartyId: (record._cr40f_terceirofavorecidoref_value ?? record._cr40f_contraparteref_value) as string | undefined,
+      counterpartyId: record._cr40f_contraparteref_value as string | undefined,
       originalDescription: record.cr40f_descricaooriginal as string | undefined,
       originalDate: String(record.cr40f_dataoriginal ?? '').slice(0, 10) || undefined,
       originalName: record.cr40f_nameoriginal as string | undefined,
@@ -282,7 +247,7 @@ export async function loadClassificationRules(
   const rows = await listReferences(
     context,
     financeSets.rules,
-    'cr40f_fluxocaixaregraid,cr40f_name,cr40f_expressao,cr40f_direcao,cr40f_ativo,_cr40f_contaref_value,_cr40f_categoriaref_value,_cr40f_terceirofavorecidoref_value,_cr40f_contraparteref_value',
+    'cr40f_fluxocaixaregraid,cr40f_name,cr40f_expressao,cr40f_direcao,cr40f_ativo,_cr40f_contaref_value,_cr40f_categoriaref_value,_cr40f_contraparteref_value',
   );
   return rows
     .filter((row) => row.expression && row.categoryId)
@@ -316,8 +281,8 @@ function validationBody(entry: CashflowEntry, validatedAt: string, ruleReference
     cr40f_natureza: entry.nature,
     'cr40f_CategoriaRef@odata.bind': `/cr40f_fluxocaixacategorias(${entry.categoryId})`,
   };
-  body['cr40f_TerceiroFavorecidoRef@odata.bind'] = entry.counterpartyId
-    ? `/${favorecidoSet}(${entry.counterpartyId})`
+  body['cr40f_ContraparteRef@odata.bind'] = entry.counterpartyId
+    ? `/${financeSets.counterparties}(${entry.counterpartyId})`
     : null;
   if (ruleReference) body['cr40f_RegraRef@odata.bind'] = ruleReference;
   return body;
@@ -340,8 +305,8 @@ function ruleBody(rule: ClassificationRule, clearMissing = false): Record<string
   };
   if (rule.accountId) body['cr40f_ContaRef@odata.bind'] = `/cr40f_fluxocaixacontas(${rule.accountId})`;
   else if (clearMissing) body['cr40f_ContaRef@odata.bind'] = null;
-  if (rule.counterpartyId) body['cr40f_TerceiroFavorecidoRef@odata.bind'] = `/${favorecidoSet}(${rule.counterpartyId})`;
-  else if (clearMissing) body['cr40f_TerceiroFavorecidoRef@odata.bind'] = null;
+  if (rule.counterpartyId) body['cr40f_ContraparteRef@odata.bind'] = `/${financeSets.counterparties}(${rule.counterpartyId})`;
+  else if (clearMissing) body['cr40f_ContraparteRef@odata.bind'] = null;
   return body;
 }
 

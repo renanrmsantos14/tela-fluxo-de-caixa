@@ -100,6 +100,11 @@ foreach ($attribute in @(
   @{Table='cr40f_fluxocaixalancamento';Definition=(Text 'cr40f_textonormalizado' 'Texto normalizado para reconhecimento' 2000)},
   @{Table='cr40f_fluxocaixalancamento';Definition=(BooleanField 'cr40f_conflitoregra' 'Conflito entre regras')},
   @{Table='cr40f_fluxocaixalancamento';Definition=(DateTimeField 'cr40f_datavalidacao' 'Data e hora da validação')},
+  @{Table='cr40f_fluxocaixacontraparte';Definition=(Text 'cr40f_tipo' 'Tipo de destinatário' 30)},
+  @{Table='cr40f_fluxocaixacontraparte';Definition=(Text 'cr40f_chavepix' 'Chave PIX' 200)},
+  @{Table='cr40f_fluxocaixacontraparte';Definition=(Text 'cr40f_email' 'E-mail' 200)},
+  @{Table='cr40f_fluxocaixacontraparte';Definition=(Text 'cr40f_telefone' 'Telefone' 50)},
+  @{Table='cr40f_fluxocaixacontraparte';Definition=(Text 'cr40f_observacao' 'Observação' 2000)},
   @{Table='cr40f_fluxocaixaregra';Definition=(Text 'cr40f_direcao' 'Direção da movimentação' 20)},
   @{Table='cr40f_fluxocaixaregra';Definition=(BooleanField 'cr40f_ativo' 'Regra ativa' $true)},
   @{Table='cr40f_fluxocaixarecorrencia';Definition=(Text 'cr40f_ajustevencimento' 'Ajuste de vencimento' 20)},
@@ -122,8 +127,6 @@ foreach ($relationship in @(
   @{Schema='cr40f_FluxoConta_Regras';Referenced='cr40f_fluxocaixaconta';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_ContaRef';Label='Conta'},
   @{Schema='cr40f_FluxoContraparte_Regras';Referenced='cr40f_fluxocaixacontraparte';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_ContraparteRef';Label='Destinatário'},
   @{Schema='cr40f_FluxoRegra_Lancamentos';Referenced='cr40f_fluxocaixaregra';Referencing='cr40f_fluxocaixalancamento';Lookup='cr40f_RegraRef';Label='Regra aplicada'},
-  @{Schema='cr40f_Favorecido_FluxoLancamentos';Referenced='cr40f_terceirofavorecido';Referencing='cr40f_fluxocaixalancamento';Lookup='cr40f_TerceiroFavorecidoRef';Label='Terceiro favorecido'},
-  @{Schema='cr40f_Favorecido_FluxoRegras';Referenced='cr40f_terceirofavorecido';Referencing='cr40f_fluxocaixaregra';Lookup='cr40f_TerceiroFavorecidoRef';Label='Terceiro favorecido'},
   @{Schema='cr40f_FluxoCategoria_Configuracao';Referenced='cr40f_fluxocaixacategoria';Referencing='cr40f_fluxocaixaconfiguracao';Lookup='cr40f_CategoriaOpRef';Label='Categoria padrão OP'}
 )) { Ensure-Relationship $base $headers $relationship.Schema $relationship.Referenced $relationship.Referencing $relationship.Lookup $relationship.Label }
 Ensure-Key $base $headers 'cr40f_fluxocaixalancamento' 'cr40f_FluxoCaixaLancamento_ChaveTransacao' 'Chave única de transação OFX' @('cr40f_chavetransacao')

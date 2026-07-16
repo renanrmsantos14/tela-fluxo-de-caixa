@@ -13,7 +13,7 @@ import { parseCategoryRows } from './lib/category-import';
 import { assertCategoryCompatible, monthlyClosing, normalizeBankText } from './lib/classification';
 import {
   audit, deleteReference, financeSets, importCategoriesAtomically, importOfxAtomically, listReferences,
-  loadClassificationRules, loadEntries, loadFavorecidos, reverseImport, saveClassificationRule, saveReference,
+  loadClassificationRules, loadDestinatarios, loadEntries, reverseImport, saveClassificationRule, saveReference,
   saveRuleAndValidateAtomically, validateEntriesAtomically,
 } from './lib/dataverse';
 import { planOfxEntries } from './lib/import-planning';
@@ -136,7 +136,7 @@ function App() {
     const [loadedAccounts, loadedCategories, loadedCounterparties, loadedImports, loadedAudit, loadedEntries] = await Promise.all([
       listReferences(resolved, financeSets.accounts, 'cr40f_fluxocaixacontaid,cr40f_name,cr40f_banco,cr40f_identificador'),
       listReferences(resolved, financeSets.categories, 'cr40f_fluxocaixacategoriaid,cr40f_name,cr40f_grupo,cr40f_natureza'),
-      loadFavorecidos(resolved),
+      loadDestinatarios(resolved),
       listReferences(resolved, financeSets.imports, 'cr40f_fluxocaixaimportacaoid,cr40f_name,cr40f_status,_cr40f_contaref_value'),
       listReferences(resolved, financeSets.events, 'cr40f_fluxocaixaeventoid,cr40f_name,cr40f_acao,cr40f_detalhe,cr40f_data'),
       loadEntries(resolved),
@@ -434,6 +434,37 @@ function App() {
     } finally { setBusy(false); }
   }
 
+  async function saveDestinatario(item: FinanceReference) {
+    const name = item.name.trim();
+    if (!name || !item.type) return flash('Informe nome e tipo do destinatário.');
+    try {
+      setBusy(true);
+      const id = await saveReference(context, financeSets.counterparties, {
+        cr40f_name: name, cr40f_tipo: item.type, cr40f_documento: item.document ?? '', cr40f_chavepix: item.identifier ?? '',
+        cr40f_email: item.email ?? '', cr40f_telefone: item.phone ?? '', cr40f_observacao: item.notes ?? '',
+      }, item.id || undefined);
+      await audit(context, item.id ? 'Destinatário editado' : 'Destinatário criado', name);
+      if (context.mode === 'mock') setCounterparties((current) => item.id
+        ? current.map((currentItem) => currentItem.id === id ? { ...item, id, name } : currentItem)
+        : [...current, { ...item, id, name }]);
+      else await reload();
+      flash(item.id ? 'Destinatário atualizado.' : 'Destinatário cadastrado.');
+    } catch (error) { flash(error instanceof Error ? error.message : 'Não foi possível salvar o destinatário.'); }
+    finally { setBusy(false); }
+  }
+
+  async function removeDestinatario(item: FinanceReference) {
+    try {
+      setBusy(true);
+      await deleteReference(context, financeSets.counterparties, item.id);
+      await audit(context, 'Destinatário excluído', item.name);
+      if (context.mode === 'mock') setCounterparties((current) => current.filter((currentItem) => currentItem.id !== item.id));
+      else await reload();
+      flash('Destinatário excluído.');
+    } catch { flash('Destinatário vinculado a lançamentos ou regras não pode ser excluído.'); }
+    finally { setBusy(false); }
+  }
+
   async function saveCategoryForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -576,7 +607,7 @@ function App() {
         {view === 'closing' && <ClosingView closing={closing} breakdown={breakdown} pending={monthEntries.filter((entry) => entry.status !== 'validated')} openEntry={openEntry} month={month} />}
         {view === 'queue' && <QueueView entries={queue} checked={checked} setChecked={setChecked} openEntry={openEntry} status={statusFilter} setStatus={setStatusFilter} search={search} setSearch={setSearch} validate={validateChecked} busy={busy} mobile={mobile} />}
         {view === 'accounts' && <MasterView title="Contas bancárias" description="Cadastre cada conta uma vez. BANKID e ACCTID do OFX evitam importação na conta errada." items={accounts} disabled={mobile || busy} onSubmit={(event) => void saveAccountForm(event)} edit={(item) => { setEditingAccount(item); setModal('account-editor'); }} remove={(item) => { setEditingAccount(item); setModal('delete-account'); }} fields={<><label>Banco<input name="bank" required /></label><label>Identificador OFX (ACCTID)<input name="identifier" required /></label></>} />}
-        {view === 'counterparties' && <SharedCounterpartiesView items={counterparties} />}
+        {view === 'counterparties' && <DestinatariosView items={counterparties} disabled={mobile || busy} save={(item) => void saveDestinatario(item)} remove={(item) => void removeDestinatario(item)} />}
         {view === 'categories' && <CategoriesView categories={categories} disabled={mobile || busy} openImport={() => setModal('category-xlsx')} add={() => { setEditingCategory(null); setModal('category-editor'); }} edit={(item) => { setEditingCategory(item); setModal('category-editor'); }} remove={(item) => { setEditingCategory(item); setModal('delete-category'); }} />}
         {view === 'rules' && <RulesView rules={rules} accounts={accounts} disabled={mobile || busy} add={() => { setEditingRule(null); setModal('rule-editor'); }} edit={(item) => { setEditingRule(item); setModal('rule-editor'); }} remove={(item) => { setEditingRule(item); setModal('delete-rule'); }} toggle={(item) => void toggleRule(item)} />}
         {view === 'imports' && <ImportsView imports={imports} entries={entries} reverse={async (id) => { try { setBusy(true); await reverseImport(context, id); await audit(context, 'Reversão OFX', `Lote ${id} revertido.`); if (context.mode !== 'mock') await reload(); flash('Lote revertido integralmente.'); } catch (error) { flash(error instanceof Error ? error.message : 'Falha na reversão.'); } finally { setBusy(false); } }} disabled={mobile || busy} />}
@@ -633,7 +664,7 @@ function App() {
         <label>Padrão textual<input name="pattern" defaultValue={editingRule?.pattern ?? ''} required /><small>Use o trecho mais estável do NAME ou MEMO bancário.</small></label>
         <div className="form-row"><label>Direção<select name="direction" defaultValue={editingRule?.direction ?? 'outflow'}><option value="inflow">Entrada</option><option value="outflow">Saída</option></select></label><label>Conta<select name="accountId" defaultValue={editingRule?.accountId ?? ''}><option value="">Todas as contas</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
         <label>Categoria<select name="categoryId" defaultValue={editingRule?.categoryId ?? ''} required><option value="">Selecione</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.group} · {item.name}</option>)}</select></label>
-        <label>Terceiro favorecido<select name="counterpartyId" defaultValue={editingRule?.counterpartyId ?? ''}><option value="">Não identificar</option>{counterparties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>Destinatário<select name="counterpartyId" defaultValue={editingRule?.counterpartyId ?? ''}><option value="">Não identificar</option>{counterparties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="check-label"><input name="active" type="checkbox" defaultChecked={editingRule?.active ?? true} />Regra ativa</label>
         <footer><button type="button" className="button secondary" onClick={closeModal}>Cancelar</button><button className="button primary" disabled={busy}><Save size={16} />Salvar regra</button></footer>
       </form>}
@@ -674,8 +705,15 @@ function MasterView({ title, description, items, disabled, onSubmit, edit, remov
   return <div className="management-grid"><form className="surface reference-form" onSubmit={onSubmit}><fieldset disabled={disabled}><p className="eyebrow">REGISTRO UNIFICADO</p><h2>Nova conta</h2><p className="form-note">{description}</p><div className="reference-fields"><label>Nome<input name="name" required /></label>{fields}</div><button className="button primary" type="submit"><Plus size={16} />Adicionar conta</button></fieldset></form><section className="surface reference-list"><p className="eyebrow">CADASTRADOS</p><h2>{title}</h2>{items.map((item) => <div className="reference-row" key={item.id}><span><strong>{item.name}</strong><small>{item.bank || item.group || item.document || item.identifier || 'Registro ativo'}{item.bank && item.identifier ? ` · ${item.identifier}` : ''}</small></span><div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} disabled={disabled} onClick={() => edit(item)}><Pencil size={15} /></button><button className="icon-button danger-action" aria-label={`Excluir ${item.name}`} disabled={disabled} onClick={() => remove(item)}><Trash2 size={15} /></button></div></div>)}</section></div>;
 }
 
-function SharedCounterpartiesView({ items }: { items: FinanceReference[] }) {
-  return <section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h2>Terceiros favorecidos ativos</h2><p>Fonte única: Tela Pagamento de Fornecedores. Alterações são feitas no app irmão e aparecem aqui automaticamente.</p></div><span className="badge info">{items.length} ativos</span></div><div className="shared-party-grid">{items.map((item) => <article key={item.id}><span className="icon-wrap"><Users size={15} /></span><div><strong>{item.name}</strong><small>{item.document || 'Documento não informado'} · PIX {item.identifier || 'não informado'}</small></div></article>)}</div></section>;
+function DestinatariosView({ items, disabled, save, remove }: { items: FinanceReference[]; disabled: boolean; save: (item: FinanceReference) => void; remove: (item: FinanceReference) => void }) {
+  const [editing, setEditing] = useState<FinanceReference | null>(null);
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    save({ id: editing?.id ?? '', name: String(form.get('name') ?? ''), type: String(form.get('type') ?? ''), document: String(form.get('document') ?? ''), identifier: String(form.get('pix') ?? ''), email: String(form.get('email') ?? ''), phone: String(form.get('phone') ?? ''), notes: String(form.get('notes') ?? '') });
+    event.currentTarget.reset(); setEditing(null);
+  };
+  return <section className="management-grid"><form className="surface reference-form" onSubmit={submit}><fieldset disabled={disabled}><p className="eyebrow">CADASTRO PRÓPRIO</p><h2>{editing ? 'Editar destinatário' : 'Novo destinatário'}</h2><p className="form-note">Registro independente do módulo de Fluxo de Caixa.</p><div className="reference-fields"><label>Nome<input name="name" defaultValue={editing?.name ?? ''} required /></label><label>Tipo<select name="type" defaultValue={editing?.type ?? ''} required><option value="">Selecione</option><option>Pessoa</option><option>Empresa</option><option>Cliente</option><option>Fornecedor</option><option>Colaborador</option><option>Outro</option></select></label><label>Documento<input name="document" defaultValue={editing?.document ?? ''} /></label><label>PIX<input name="pix" defaultValue={editing?.identifier ?? ''} /></label><label>E-mail<input name="email" type="email" defaultValue={editing?.email ?? ''} /></label><label>Telefone<input name="phone" defaultValue={editing?.phone ?? ''} /></label><label className="recipient-notes">Observação<textarea name="notes" defaultValue={editing?.notes ?? ''} /></label></div><div className="row-actions"><button className="button primary">{editing ? <Save size={16} /> : <Plus size={16} />}{editing ? 'Salvar' : 'Adicionar'}</button>{editing && <button type="button" className="button secondary" onClick={() => setEditing(null)}>Cancelar</button>}</div></fieldset></form><section className="surface reference-list"><div className="imports-head"><div><p className="eyebrow">DESTINATÁRIOS</p><h2>Registros do Fluxo de Caixa</h2></div><span className="badge info">{items.length}</span></div><div className="shared-party-grid">{items.map((item) => <article key={item.id}><span className="icon-wrap"><Users size={15} /></span><div><strong>{item.name}</strong><small>{item.type || 'Outro'} · {item.document || 'sem documento'}</small><small>{item.identifier ? `PIX ${item.identifier}` : item.email || item.phone || 'sem contato'}</small></div><div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} disabled={disabled} onClick={() => setEditing(item)}><Pencil size={15} /></button><button className="icon-button danger-action" aria-label={`Excluir ${item.name}`} disabled={disabled} onClick={() => remove(item)}><Trash2 size={15} /></button></div></article>)}</div></section></section>;
 }
 
 function CategoriesView({ categories, disabled, openImport, add, edit, remove }: { categories: FinanceReference[]; disabled: boolean; openImport: () => void; add: () => void; edit: (item: FinanceReference) => void; remove: (item: FinanceReference) => void }) {

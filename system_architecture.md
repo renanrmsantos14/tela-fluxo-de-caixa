@@ -2,13 +2,13 @@
 
 ## Terceiros favorecidos
 
-Fonte única: `cr40f_terceirofavorecido`, compartilhada com o webresource Tela
+Fonte única: `cr40f_fluxocaixacontraparte`, própria do módulo Fluxo de Caixa.
 Pagamento de Fornecedores.
 
 - O app consulta `EntitySetName`, chave primária, nome primário e Choice de
   status pela metadata do ambiente.
 - Somente o valor rotulado como `Ativo` é listado.
-- Lançamentos e regras usam o lookup `cr40f_TerceiroFavorecidoRef`.
+- Lançamentos e regras usam o lookup `cr40f_ContraparteRef`.
 - O módulo de fluxo não cria nem edita favorecidos; manutenção pertence ao app
   irmão.
 
