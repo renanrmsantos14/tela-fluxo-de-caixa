@@ -17,6 +17,14 @@ export function buildWeeks(anchor = new Date(), count = 26): Date[] {
   return Array.from({ length: count }, (_, index) => addDays(first, index * 7));
 }
 
+export function buildMonths(anchor = new Date(), count = 12): Date[] {
+  return Array.from({ length: count }, (_, index) => new Date(anchor.getFullYear(), anchor.getMonth() + index, 1));
+}
+
+export function monthlyAmount(entries: CashflowEntry[], month: Date, category?: string): number {
+  return entries.filter((entry) => included(entry) && new Date(`${entry.date}T12:00:00`).getFullYear() === month.getFullYear() && new Date(`${entry.date}T12:00:00`).getMonth() === month.getMonth() && (!category || entry.category === category)).reduce((sum, entry) => sum + signedAmount(entry), 0);
+}
+
 export function weeklyAmount(entries: CashflowEntry[], week: Date, category?: string): number {
   return entries.filter((entry) => included(entry) && isSameWeek(entry.date, week) && (!category || entry.category === category)).reduce((sum, entry) => sum + signedAmount(entry), 0);
 }

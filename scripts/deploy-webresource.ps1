@@ -15,7 +15,7 @@ function Token($url, [switch]$UseDeviceCode) {
   if (-not (Get-Module -ListAvailable MSAL.PS)) { throw 'MSAL.PS não encontrado. Instale: Install-Module MSAL.PS -Scope CurrentUser' }
   Import-Module MSAL.PS -ErrorAction Stop
   $client = New-MsalClientApplication -ClientId '51f81489-12ee-4a9e-aaae-a2591f45987d' -TenantId 'organizations' -RedirectUri ([Uri]'http://localhost')
-  Enable-MsalTokenCacheOnDisk -PublicClientApplication $client
+  Enable-MsalTokenCacheOnDisk -PublicClientApplication $client | Out-Null
   $scope = "$url/user_impersonation"
   try { return (Get-MsalToken -PublicClientApplication $client -Scopes $scope -Silent).AccessToken } catch { if ($UseDeviceCode) { return (Get-MsalToken -PublicClientApplication $client -Scopes $scope -DeviceCode).AccessToken }; return (Get-MsalToken -PublicClientApplication $client -Scopes $scope -Interactive).AccessToken }
 }

@@ -1,6 +1,13 @@
-import type { CashflowEntry, OfxImportResult, OrderMapping, RuntimeContext } from '../types';
+import type { CashflowEntry, FinanceReference, OfxImportResult, OrderMapping, RuntimeContext } from '../types';
 
 const entrySet = 'cr40f_fluxocaixalancamentos';
+
+export const financeSets = {
+  accounts: 'cr40f_fluxocaixacontas', categories: 'cr40f_fluxocaixacategorias',
+  recurrences: 'cr40f_fluxocaixarecorrencias', rules: 'cr40f_fluxocaixaregras',
+  holidays: 'cr40f_fluxocaixaferiados', settings: 'cr40f_fluxocaixaconfiguracaos',
+  events: 'cr40f_fluxocaixaeventos', imports: 'cr40f_fluxocaixaimportacaos'
+} as const;
 
 function payload(entry: CashflowEntry): Record<string, unknown> {
   return {
@@ -41,6 +48,37 @@ export async function saveEntry(context: RuntimeContext, entry: CashflowEntry): 
   const response = await directRequest(context, entrySet, { method: 'POST', body: JSON.stringify(payload(entry)) });
   const entity = response.headers.get('OData-EntityId');
   return entity?.match(/\(([0-9a-f-]{36})\)$/i)?.[1] ?? entry.id;
+}
+
+export async function listReferences(context: RuntimeContext, setName: string, select: string): Promise<FinanceReference[]> {
+  if (context.mode === 'mock') return [];
+  const result = await directRequest(context, `${setName}?$select=${select}&$orderby=createdon desc`).then((response) => response.json()) as { value: Record<string, unknown>[] };
+  return result.value.map((record) => ({ id: String(Object.entries(record).find(([key]) => key.endsWith('id'))?.[1] ?? ''), name: String(record.cr40f_name ?? ''), group: record.cr40f_grupo as string | undefined, nature: record.cr40f_natureza as FinanceReference['nature'], bank: record.cr40f_banco as string | undefined, identifier: record.cr40f_identificador as string | undefined, amount: Number(record.cr40f_valor ?? 0), category: record.cr40f_categoria as string | undefined, frequency: record.cr40f_frequencia as FinanceReference['frequency'], intervalDays: Number(record.cr40f_intervalodias ?? 0) || undefined, start: String(record.cr40f_inicio ?? '').slice(0, 10) || undefined, end: String(record.cr40f_fim ?? '').slice(0, 10) || undefined, date: String(record.cr40f_data ?? '').slice(0, 10) || undefined, expression: record.cr40f_expressao as string | undefined, recipients: record.cr40f_destinatariosalerta as string | undefined, entity: record.cr40f_entidadeop as string | undefined, entitySet: record.cr40f_entitysetop as string | undefined, idField: record.cr40f_campoidop as string | undefined, amountField: record.cr40f_campovalorop as string | undefined, dateField: record.cr40f_campodataop as string | undefined }));
+}
+
+export async function saveReference(context: RuntimeContext, setName: string, body: Record<string, unknown>, id?: string): Promise<string> {
+  if (context.mode === 'mock') return id ?? crypto.randomUUID();
+  if (!context.clientUrl) throw new Error('Contexto Dataverse sem URL.');
+  if (id) { await directRequest(context, `${setName}(${id})`, { method: 'PATCH', headers: { 'If-Match': '*' }, body: JSON.stringify(body) }); return id; }
+  const response = await directRequest(context, setName, { method: 'POST', body: JSON.stringify(body) });
+  return response.headers.get('OData-EntityId')?.match(/\(([0-9a-f-]{36})\)$/i)?.[1] ?? crypto.randomUUID();
+}
+
+export async function patchEntry(context: RuntimeContext, entry: CashflowEntry, changes: Partial<CashflowEntry>): Promise<void> {
+  if (context.mode === 'mock') return;
+  await directRequest(context, `${entrySet}(${entry.id})`, { method: 'PATCH', headers: { 'If-Match': entry.etag ?? '*' }, body: JSON.stringify(payload({ ...entry, ...changes })) });
+}
+
+export async function reverseImport(context: RuntimeContext, importId: string): Promise<void> {
+  if (context.mode === 'mock') return;
+  const filter = encodeURIComponent(`cr40f_importacaoid eq '${odata(importId)}'`);
+  const records = await directRequest(context, `${entrySet}?$select=cr40f_fluxocaixalancamentoid&$filter=${filter}`).then((response) => response.json()) as { value: Array<{ cr40f_fluxocaixalancamentoid: string }> };
+  await Promise.all(records.value.map((record) => directRequest(context, `${entrySet}(${record.cr40f_fluxocaixalancamentoid})`, { method: 'PATCH', headers: { 'If-Match': '*' }, body: JSON.stringify({ cr40f_status: 'reversed' }) })));
+  await directRequest(context, `${financeSets.imports}(${importId})`, { method: 'PATCH', headers: { 'If-Match': '*' }, body: JSON.stringify({ cr40f_status: 'reversed' }) });
+}
+
+export async function audit(context: RuntimeContext, action: string, detail: string): Promise<void> {
+  await saveReference(context, financeSets.events, { cr40f_name: action, cr40f_acao: action, cr40f_detalhe: detail, cr40f_data: new Date().toISOString().slice(0, 10) });
 }
 
 export async function importExists(context: RuntimeContext, fingerprint: string): Promise<boolean> {
@@ -116,12 +154,12 @@ export async function updateReconciliation(context: RuntimeContext, actual: Cash
 }
 
 function mapEntry(record: Record<string, unknown>): CashflowEntry {
-  return { id: String(record.cr40f_fluxocaixalancamentoid), description: String(record.cr40f_name ?? ''), category: String(record.cr40f_categoria ?? 'A classificar'), group: String(record.cr40f_grupo ?? 'A classificar'), amount: Number(record.cr40f_valor ?? 0), date: String(record.cr40f_data ?? '').slice(0, 10), kind: String(record.cr40f_tipo ?? 'forecast') as CashflowEntry['kind'], nature: String(record.cr40f_natureza ?? 'outflow') as CashflowEntry['nature'], status: String(record.cr40f_status ?? 'open') as CashflowEntry['status'], source: String(record.cr40f_origem ?? 'manual') as CashflowEntry['source'], account: record.cr40f_conta as string | undefined, originalDescription: record.cr40f_descricaooriginal as string | undefined, originalDate: (record.cr40f_dataoriginal as string | undefined)?.slice(0, 10), fitId: record.cr40f_fitid as string | undefined, transactionKey: record.cr40f_chavetransacao as string | undefined, originId: record.cr40f_origemid as string | undefined, reconciledWithId: record.cr40f_conciliadocomid as string | undefined, etag: record['@odata.etag'] as string | undefined };
+  return { id: String(record.cr40f_fluxocaixalancamentoid), description: String(record.cr40f_name ?? ''), category: String(record.cr40f_categoria ?? 'A classificar'), group: String(record.cr40f_grupo ?? 'A classificar'), amount: Number(record.cr40f_valor ?? 0), date: String(record.cr40f_data ?? '').slice(0, 10), kind: String(record.cr40f_tipo ?? 'forecast') as CashflowEntry['kind'], nature: String(record.cr40f_natureza ?? 'outflow') as CashflowEntry['nature'], status: String(record.cr40f_status ?? 'open') as CashflowEntry['status'], source: String(record.cr40f_origem ?? 'manual') as CashflowEntry['source'], account: record.cr40f_conta as string | undefined, originalDescription: record.cr40f_descricaooriginal as string | undefined, originalDate: (record.cr40f_dataoriginal as string | undefined)?.slice(0, 10), fitId: record.cr40f_fitid as string | undefined, transactionKey: record.cr40f_chavetransacao as string | undefined, originId: record.cr40f_origemid as string | undefined, importId: record.cr40f_importacaoid as string | undefined, reconciledWithId: record.cr40f_conciliadocomid as string | undefined, etag: record['@odata.etag'] as string | undefined };
 }
 
 export async function loadEntries(context: RuntimeContext): Promise<CashflowEntry[]> {
   if (context.mode === 'mock') return [];
-  const query = '?$select=cr40f_fluxocaixalancamentoid,cr40f_name,cr40f_data,cr40f_valor,cr40f_categoria,cr40f_grupo,cr40f_origem,cr40f_tipo,cr40f_natureza,cr40f_status,cr40f_conta,cr40f_chavetransacao,cr40f_origemid,cr40f_conciliadocomid,cr40f_fitid,cr40f_descricaooriginal,cr40f_dataoriginal&$orderby=cr40f_data asc';
+  const query = '?$select=cr40f_fluxocaixalancamentoid,cr40f_name,cr40f_data,cr40f_valor,cr40f_categoria,cr40f_grupo,cr40f_origem,cr40f_tipo,cr40f_natureza,cr40f_status,cr40f_conta,cr40f_chavetransacao,cr40f_origemid,cr40f_importacaoid,cr40f_conciliadocomid,cr40f_fitid,cr40f_descricaooriginal,cr40f_dataoriginal&$orderby=cr40f_data asc';
   const records = context.mode === 'xrm' && context.xrm?.WebApi ? (await context.xrm.WebApi.retrieveMultipleRecords('cr40f_fluxocaixalancamento', query)).entities : (await directRequest(context, `${entrySet}${query}`).then((response) => response.json()) as { value: Record<string, unknown>[] }).value;
   return records.map(mapEntry);
 }

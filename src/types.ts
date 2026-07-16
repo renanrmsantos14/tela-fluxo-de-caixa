@@ -22,7 +22,27 @@ export interface CashflowEntry {
   transactionKey?: string;
   originId?: string;
   reconciledWithId?: string;
+  importId?: string;
   etag?: string;
+}
+
+export interface FinanceReference {
+  id: string;
+  name: string;
+  group?: string;
+  nature?: EntryNature;
+  bank?: string;
+  identifier?: string;
+  amount?: number;
+  category?: string;
+  frequency?: 'weekly' | 'monthly' | 'annual' | 'custom';
+  intervalDays?: number;
+  start?: string;
+  end?: string;
+  date?: string;
+  expression?: string;
+  recipients?: string;
+  [key: string]: unknown;
 }
 
 export interface OfxTransaction {
